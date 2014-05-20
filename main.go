@@ -136,18 +136,14 @@ func main() {
 	scrollFlag := flag.String("scroll", "", "scroll ID to continue from")
 	flag.Parse()
 	if flag.NArg() != 2 {
-		fmt.Printf("Expected 2 arguments, found %d\n", flag.NArg())
-		flag.PrintDefaults()
-		os.Exit(1)
+		UsageExitErr(fmt.Sprintf("Expected 2 arguments, found %d\n", flag.NArg()))
 	}
 	src := flag.Arg(0)
 	dst := flag.Arg(1)
 
 	rawSize, err := toBytes(*size)
 	if err != nil {
-		fmt.Printf("Invalid upload size %s: %v", *size, err)
-		flag.PrintDefaults()
-		os.Exit(1)
+		UsageExitErr(fmt.Sprintf("Invalid upload size %s: %v", *size, err))
 	}
 
 	uploadChan := make(chan []*Doc, 1)
@@ -236,4 +232,18 @@ func main() {
 	fmt.Printf("Finished downloading %d documents.\n", done)
 	close(uploadChan)
 	wg.Wait()
+}
+
+func UsageExitErr(msg string) {
+	if msg != "" {
+		fmt.Fprintf(os.Stderr, "\n%s\n", msg)
+	}
+	fmt.Fprintf(os.Stderr, `Usage: 
+
+%s [options] \
+		http://localhost:9200/myindex/_search \   # the Source Url
+		http://locahost:9200/destinationindex
+	  %s`, os.Args[0], "\n\n")
+	flag.PrintDefaults()
+	os.Exit(1)
 }
