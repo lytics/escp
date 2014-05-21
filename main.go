@@ -92,7 +92,9 @@ func uploader(wg *sync.WaitGroup, target string, docChan <-chan []*Doc, size int
 			if err := enc.Encode(envelope); err != nil {
 				panic(err.Error())
 			}
-			// Strip newlines in the source
+
+			// Strip newlines in the source since the bulk API can't handle them.
+			// JSON strings can't have literal (unescaped) newlines in them anyway.
 			for _, c := range doc.Source {
 				if c != '\n' {
 					buf.WriteByte(c)
