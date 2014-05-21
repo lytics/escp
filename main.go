@@ -39,10 +39,10 @@ func toBytes(v string) (int, error) {
 }
 
 func toHumans(b int) string {
-	for _, k := range []byte("gmkb") {
-		v := magnitudes[k]
-		if b > v {
-			return fmt.Sprintf("%.2v%c", float64(b)/float64(v), k)
+	for _, k := range []byte("gmk") {
+		m := magnitudes[k]
+		if b > m {
+			return fmt.Sprintf("%.2v%c", float64(b)/float64(m), k)
 		}
 	}
 	return fmt.Sprintf("%db", b)
@@ -92,24 +92,26 @@ func uploader(wg *sync.WaitGroup, target string, docChan <-chan []*Doc, size int
 			if err := enc.Encode(envelope); err != nil {
 				panic(err.Error())
 			}
-			buf.Write(doc.Source)
+			// Strip newlines in the source
+			for _, c := range doc.Source {
+				if c != '\n' {
+					buf.WriteByte(c)
+				}
+			}
 			buf.WriteByte('\n')
 			if buf.Len() >= size {
-				wg.Add(1)
-				go doUpload(wg.Done, bulkURL, buf.Bytes())
+				doUpload(bulkURL, buf.Bytes())
 				buf = bytes.NewBuffer(make([]byte, 0, size))
 				enc = json.NewEncoder(buf)
 			}
 		}
 	}
 	if buf.Len() > 0 {
-		wg.Add(1)
-		doUpload(wg.Done, bulkURL, buf.Bytes())
+		doUpload(bulkURL, buf.Bytes())
 	}
 }
 
-func doUpload(done func(), target string, body []byte) {
-	defer done()
+func doUpload(target string, body []byte) {
 	start := time.Now()
 	sz := toHumans(len(body))
 	resp, err := http.DefaultClient.Post(target, "application/json", bytes.NewReader(body))
@@ -123,7 +125,9 @@ func doUpload(done func(), target string, body []byte) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("Body: %s\n", string(raw))
+		fmt.Println(string(raw))
+		fmt.Println()
+		fmt.Println(string(body))
 	} else {
 		fmt.Printf("Uploaded %s of documents in %s\n", sz, time.Now().Sub(start))
 	}
@@ -131,45 +135,93 @@ func doUpload(done func(), target string, body []byte) {
 
 func main() {
 	eta := flag.String("eta", "10m", "time to keep scroll cursor alive")
-	batch := flag.Int("batch", 1000, "number of documents to retrieve at once")
+	batch := flag.Int("batch", 1000, "documents to retrieve at once from each shard")
 	size := flag.String("size", toHumans(esMaxUploadSize), "size of each bulk upload")
 	scrollFlag := flag.String("scroll", "", "scroll ID to continue from")
+	filterFlag := flag.String("filter", "", "optional filter to apply")
 	flag.Parse()
 	if flag.NArg() != 2 {
 		UsageExitErr(fmt.Sprintf("Expected 2 arguments, found %d\n", flag.NArg()))
 	}
+
 	src := flag.Arg(0)
 	dst := flag.Arg(1)
+
+	srcURL, err := url.Parse(src)
+	if err != nil {
+		UsageExitErr(fmt.Sprintf("Bad source URL %s: %v", src, err))
+	}
 
 	rawSize, err := toBytes(*size)
 	if err != nil {
 		UsageExitErr(fmt.Sprintf("Invalid upload size %s: %v", *size, err))
 	}
 
-	uploadChan := make(chan []*Doc, 1)
+	if *filterFlag != "" && *scrollFlag != "" {
+		UsageExitErr("Cannot set `filter` and `scroll`.")
+	}
+
+	var filter map[string]interface{}
+	if *filterFlag != "" {
+		if err := json.Unmarshal([]byte(*filterFlag), &filter); err != nil {
+			UsageExitErr(fmt.Sprintf("`filter` is not valid JSON: %v", err))
+		}
+		if _, ok := filter["filter"]; ok {
+			UsageExitErr("`filter` should not include `filter` key")
+		}
+	}
+
+	uploadChan := make(chan []*Doc, 2) // allow a batches to buffer a bit
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
 	go uploader(wg, dst, uploadChan, int(rawSize))
 
-	scrollID := *scrollFlag
+	s := time.Now()
+	done := download(srcURL, *scrollFlag, *eta, *batch, filter, uploadChan)
+	fmt.Printf("Finished downloading %d documents in %s.\n", done, time.Now().Sub(s))
+	close(uploadChan)
+	wg.Wait()
+}
+
+// download pulls documents from src and sends them to uploadChan.
+func download(src *url.URL, scrollID, eta string, batch int, filter map[string]interface{}, uploadChan chan []*Doc) uint64 {
 	if scrollID == "" {
 		srcVals := url.Values{
-			"scroll":      []string{*eta},
+			"scroll":      []string{eta},
 			"search_type": []string{"scan"},
-			"size":        []string{strconv.Itoa(*batch)},
+			"size":        []string{strconv.Itoa(batch)},
 		}.Encode()
-		searchURL := src + "?" + srcVals
+		searchURL := fmt.Sprintf("%s/_search?%s", src, srcVals)
 
 		// Start search
-		resp, err := http.DefaultClient.Get(searchURL)
+		var err error
+		var resp *http.Response
+		if filter == nil {
+			resp, err = http.DefaultClient.Get(searchURL)
+		} else {
+			req := struct {
+				Filter map[string]interface{} `json:"filter"`
+			}{filter}
+			body, err := json.Marshal(req)
+			if err != nil {
+				// We were able to decode the filter, so being unable to encode it
+				// should never happen.
+				panic(err)
+			}
+			resp, err = http.DefaultClient.Post(searchURL, "application/json", bytes.NewReader(body))
+		}
 		if err != nil {
 			fmt.Printf("Error connecting to %s: %v", searchURL, err)
 			os.Exit(1)
 		}
 		if resp.StatusCode != 200 {
 			fmt.Printf("Non-200 status code on search: %d %s\n", resp.StatusCode, searchURL)
+			os.Exit(2)
 		}
 		scrollResp := &struct {
+			Hits *struct {
+				Total int64 `json:"total"`
+			} `json:"hits"`
 			ScrollID string `json:"_scroll_id"`
 		}{}
 		if err := json.NewDecoder(resp.Body).Decode(scrollResp); err != nil {
@@ -177,13 +229,9 @@ func main() {
 		}
 
 		scrollID = scrollResp.ScrollID
+		fmt.Printf("Started scrolling over %d documents with ID %s", scrollResp.Hits.Total, scrollID)
 	}
-
-	srcURL, err := url.Parse(src)
-	if err != nil {
-		fmt.Printf("Bad source URL %s: %v", src, err)
-	}
-	baseSrcURL := srcURL.Scheme + "://" + srcURL.Host + "/" + "_search/scroll"
+	baseSrcURL := src.Scheme + "://" + src.Host + "/" + "_search/scroll"
 	deleteURL := fmt.Sprintf("%s?%s", baseSrcURL, url.Values{"scroll_id": []string{scrollID}}.Encode())
 	defer func() {
 		req, err := http.NewRequest("DELETE", deleteURL, nil)
@@ -199,8 +247,8 @@ func main() {
 		}
 	}()
 
-	scrollVals := &url.Values{"scroll_id": []string{scrollID}, "scroll": []string{*eta}}
-	done := 0
+	scrollVals := &url.Values{"scroll_id": []string{scrollID}, "scroll": []string{eta}}
+	var done uint64 = 0
 	for i := 0; ; i++ {
 		innerStart := time.Now()
 		resp, err := http.DefaultClient.Get(baseSrcURL + "?" + scrollVals.Encode())
@@ -226,12 +274,10 @@ func main() {
 
 		uploadChan <- result.Hits.Hits
 		numDocs := len(result.Hits.Hits)
-		done += numDocs
+		done += uint64(numDocs)
 		fmt.Printf("Retrieved %d documents in %s. Scroll ID: %s \n", numDocs, time.Now().Sub(innerStart), result.ScrollID)
 	}
-	fmt.Printf("Finished downloading %d documents.\n", done)
-	close(uploadChan)
-	wg.Wait()
+	return done
 }
 
 func UsageExitErr(msg string) {
@@ -241,8 +287,8 @@ func UsageExitErr(msg string) {
 	fmt.Fprintf(os.Stderr, `Usage: 
 
 %s [options] \
-		http://localhost:9200/myindex/_search \   # the Source Url
-		http://locahost:9200/destinationindex
+		http://localhost:9200/source_index \
+		http://locahost:9200/destination_index
 	  %s`, os.Args[0], "\n\n")
 	flag.PrintDefaults()
 	os.Exit(1)
