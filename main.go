@@ -109,8 +109,10 @@ func uploader(wg *sync.WaitGroup, target string, docChan <-chan []*Doc, size int
 		}
 	}
 	if buf.Len() > 0 {
+		log.Printf("Downloading finishd. %d bytes left to upload.", buf.Len())
 		doUpload(bulkURL, buf.Bytes())
 	}
+	log.Printf("Uploader done")
 }
 
 func doUpload(target string, body []byte) {
@@ -131,7 +133,7 @@ func doUpload(target string, body []byte) {
 		fmt.Println()
 		fmt.Println(string(body))
 	} else {
-		fmt.Printf("Uploaded %s of documents in %s\n", sz, time.Now().Sub(start))
+		log.Printf("Uploaded %s of documents in %s\n", sz, time.Now().Sub(start))
 	}
 }
 
@@ -179,14 +181,16 @@ func main() {
 	go uploader(wg, dst, uploadChan, int(rawSize))
 
 	s := time.Now()
-	done := download(srcURL, *scrollFlag, *eta, *batch, filter, uploadChan)
-	fmt.Printf("Finished downloading %d documents in %s.\n", done, time.Now().Sub(s))
+	doneDocs, doneBytes := download(srcURL, *scrollFlag, *eta, *batch, filter, uploadChan)
+	log.Printf("Finished downloading %d documents (%d bytes) in %s.\n", doneDocs, doneBytes, time.Now().Sub(s))
 	close(uploadChan)
 	wg.Wait()
 }
 
 // download pulls documents from src and sends them to uploadChan.
-func download(src *url.URL, scrollID, eta string, batch int, filter map[string]interface{}, uploadChan chan []*Doc) uint64 {
+func download(src *url.URL, scrollID, eta string, batch int, filter map[string]interface{}, uploadChan chan<- []*Doc,
+) (doneDocs uint64, doneBytes uint64) {
+
 	if scrollID == "" {
 		srcVals := url.Values{
 			"scroll":      []string{eta},
@@ -231,7 +235,7 @@ func download(src *url.URL, scrollID, eta string, batch int, filter map[string]i
 		}
 
 		scrollID = scrollResp.ScrollID
-		fmt.Printf("Started scrolling over %d documents with ID %s", scrollResp.Hits.Total, scrollID)
+		log.Printf("Started scrolling over %d documents with ID %s", scrollResp.Hits.Total, scrollID)
 	}
 	baseSrcURL := src.Scheme + "://" + src.Host + "/" + "_search/scroll"
 	deleteURL := fmt.Sprintf("%s?%s", baseSrcURL, url.Values{"scroll_id": []string{scrollID}}.Encode())
@@ -242,23 +246,25 @@ func download(src *url.URL, scrollID, eta string, batch int, filter map[string]i
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("Error deleting cursor: %v", err)
 		}
 		if resp.StatusCode != 200 {
-			log.Fatalf("Non-200 status code when deleting cursor: %d", resp.StatusCode)
+			log.Printf("Non-200 status code when deleting cursor: %d", resp.StatusCode)
 		}
 	}()
 
 	scrollVals := &url.Values{"scroll_id": []string{scrollID}, "scroll": []string{eta}}
-	var done uint64 = 0
 	for i := 0; ; i++ {
-		innerStart := time.Now()
 		resp, err := http.DefaultClient.Get(baseSrcURL + "?" + scrollVals.Encode())
 		if err != nil {
 			panic(err)
 		}
+		buf, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			panic(err)
+		}
 		result := new(Results)
-		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+		if err := json.Unmarshal(buf, result); err != nil {
 			panic(err)
 		}
 		if resp.StatusCode != 200 {
@@ -267,19 +273,19 @@ func download(src *url.URL, scrollID, eta string, batch int, filter map[string]i
 		}
 		scrollVals.Set("scroll_id", result.ScrollID)
 		if err := resp.Body.Close(); err != nil {
-			fmt.Printf("Error closing scroll %d response: %v\n", i, err)
+			panic(fmt.Sprintf("Error closing scroll %d response: %v\n", i, err))
 		}
 		if len(result.Hits.Hits) == 0 {
-			fmt.Printf("Done scrolling over %d documents in %d requests.\n", done, i)
+			fmt.Printf("Done scrolling over %d documents / %d bytes in %d requests.\n", doneDocs, doneBytes, i)
 			break
 		}
 
-		uploadChan <- result.Hits.Hits
 		numDocs := len(result.Hits.Hits)
-		done += uint64(numDocs)
-		fmt.Printf("Retrieved %d documents in %s. Scroll ID: %s \n", numDocs, time.Now().Sub(innerStart), result.ScrollID)
+		doneDocs += uint64(numDocs)
+		doneBytes += uint64(len(buf))
+		uploadChan <- result.Hits.Hits
 	}
-	return done
+	return
 }
 
 func UsageExitErr(msg string) {
