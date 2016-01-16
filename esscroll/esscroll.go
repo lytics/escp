@@ -78,7 +78,7 @@ func Start(surl, timeout string, pagesz int, filter map[string]interface{}) (*Re
 	}
 
 	out := make(chan *estypes.Doc, pagesz) // each results will actually get pagesz*shards documents
-	r := Response{Total: result.Hits.Total, Hits: out}
+	r := Response{Total: result.Hits.Total, Hits: out, mu: new(sync.Mutex)}
 
 	go func() {
 		defer close(out)
