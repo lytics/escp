@@ -77,7 +77,7 @@ func Start(surl, timeout string, pagesz int, filter map[string]interface{}) (*Re
 		return nil, fmt.Errorf("invalid response")
 	}
 
-	out := make(chan *estypes.Doc, pagesz) // each results will actually get pagesz*shards documents
+	out := make(chan *estypes.Doc, pagesz) // each result will actually get pagesz*shards documents
 	r := Response{Total: result.Hits.Total, Hits: out, mu: new(sync.Mutex)}
 
 	go func() {
