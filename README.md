@@ -1,20 +1,30 @@
-ElasticSearch Copier
-------------------------------
+# Elasticsearch Copier
 
-Tool to copy elasticsearch indexes.
+Toolkit for copying and validating Elasticsearch indexes.
 
+* `escp` copies an index
+* `esdiff` compares documents in two indexes; intended for validating copies
 
-Usage
-----------------------
+## Usage
 ```sh
-escp http://localhost:9200/oldindex http://localhost:9200/newindex
+# Install all utilities with go get:
+go get -v github.com/lytics/escp/...
 ```
 
-Or to only copy a subset:
+```sh
+# Copy srcindex on host1 to dstindex on host2
+escp http://host1:9200/srcindex/_search http://host2:9200/_bulk dstindex
+```
 
 ```sh
-escp -filter='{"term": {"somefield": "somevalue"}}' \
-    http://localhost:9200/oldindex http://localhost:9200/newindex
+# Check document counts are equal and spot check documents
+esdiff http://host1:9200/srcindex/_search http://host2:9200/dstindex
+
+# Check 25% of documents
+esdiff -d 4 http://host1:9200/srcindex/_search http://host2:9200/dstindex
+
+# Check all documents
+esdiff -d 1 http://host1:9200/srcindex/_search http://host2:9200/dstindex
 ```
 
 Other Tools
