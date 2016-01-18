@@ -24,6 +24,8 @@ type Indexer struct {
 	err   chan error
 }
 
+// Err allows monitoring for errors while indexing is occurring. It will be
+// closed when indexing is finished.
 func (i *Indexer) Err() chan error { return i.err }
 
 // NewIndexer creates a new Elasticsearch bulk indexer. URL should be of the
@@ -31,7 +33,7 @@ func (i *Indexer) Err() chan error { return i.err }
 //
 // Sends to docs should select on Indexer.Err to prevent deadlocking in case of
 // indexer error.
-func NewIndexer(url string, docs <-chan *estypes.Doc) *Indexer {
+func NewIndexer(url string, index string, docs <-chan *estypes.Doc) *Indexer {
 	indexer := &Indexer{
 		docs: docs,
 
@@ -40,6 +42,8 @@ func NewIndexer(url string, docs <-chan *estypes.Doc) *Indexer {
 	}
 
 	go func() {
+		defer close(indexer.err)
+
 		// Batches are flushed when they exceed 25mb, so give the buffer plenty of
 		// breathing room to avoid resizing.
 		const uploadat = 25 * 1024 * 1024
@@ -51,6 +55,7 @@ func NewIndexer(url string, docs <-chan *estypes.Doc) *Indexer {
 
 			// Write action
 			action.Index = &doc.Meta
+			action.Index.Index = index
 			if err := enc.Encode(&action); err != nil {
 				indexer.err <- err
 				return

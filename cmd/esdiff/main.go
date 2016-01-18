@@ -32,6 +32,9 @@ func main() {
 	force := false
 	flag.BoolVar(&force, "force", force, "continue check even if document count varies")
 	flag.Parse()
+	if flag.NArg() != 2 {
+		fatalf("requires 2 arguments")
+	}
 	src := flag.Arg(0)
 	dst := flag.Arg(1)
 
@@ -39,6 +42,9 @@ func main() {
 		dst += "/"
 	}
 
+	if denom < 2 {
+		denom = 1
+	}
 	dice := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	resp, err := esscroll.Start(src, timeout, pagesz, nil)
@@ -99,9 +105,6 @@ func main() {
 			if origdoc.Type != newdoc.Type {
 				fatalf("metadata mismatch; coding error? Type %s != %s", origdoc.Type, newdoc.Type)
 			}
-			if origdoc.Index != newdoc.Index {
-				fatalf("metadata mismatch; coding error? Index %s != %s", origdoc.Index, newdoc.Index)
-			}
 
 			// Fast path
 			if bytes.Equal(origdoc.Source, newdoc.Source) {
@@ -146,5 +149,6 @@ func main() {
 
 func fatalf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "fatal error: "+msg+"\n", args...)
+	flag.Usage()
 	os.Exit(2)
 }
