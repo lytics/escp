@@ -24,12 +24,3 @@ type Results struct {
 	TimedOut bool   `json:"timed_out"`
 	ScrollID string `json:"_scroll_id"`
 }
-
-type BulkAction struct {
-	Index *Meta `json:"index,omitempty"`
-}
-
-type BulkResponse struct {
-	Errors bool `json:"errors"`
-	//Items []*BulkActionResponse //TODO
-}

@@ -49,7 +49,7 @@ func NewIndexer(url string, index string, docs <-chan *estypes.Doc) *Indexer {
 		const uploadat = 25 * 1024 * 1024
 		const bufsz = 40 * 1024 * 1024
 		buf := bytes.NewBuffer(make([]byte, 0, bufsz))
-		action := estypes.BulkAction{}
+		action := BulkAction{}
 		enc := json.NewEncoder(buf)
 		for doc := range docs {
 
@@ -102,7 +102,7 @@ func upload(url string, buf []byte) error {
 		ioutil.ReadAll(resp.Body)
 		return fmt.Errorf("esbulk: non-200 response code: %d", resp.StatusCode)
 	}
-	bresp := estypes.BulkResponse{}
+	bresp := BulkResponse{}
 	if err := json.NewDecoder(resp.Body).Decode(&bresp); err != nil {
 		return fmt.Errorf("esbulk: error decoding response: %v", err)
 	}
