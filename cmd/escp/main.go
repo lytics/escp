@@ -21,12 +21,15 @@ func main() {
 		flag.PrintDefaults()
 	}
 	shards := 0
-	flag.IntVar(&shards, "shards", shards, "number of shards target index will have (0 = same as old index)")
+	flag.IntVar(&shards, "shards", shards, "number of shards target index will have (default = same as old index)")
 	skipcreate := false
-	flag.BoolVar(&skipcreate, "skipcreate", skipcreate, "skip destination index creation; overrides shards setting")
+	flag.BoolVar(&skipcreate, "skipcreate", skipcreate, "skip destination index creation")
 	flag.Parse()
 	if flag.NArg() != 2 {
-		fatalf("Expected 2 arguments, found %d\n", flag.NArg())
+		fatalf("expected 2 arguments, found %d\n", flag.NArg())
+	}
+	if shards > 0 && skipcreate {
+		fatalf("cannot set shards and skip index creation")
 	}
 
 	src := flag.Arg(0)
