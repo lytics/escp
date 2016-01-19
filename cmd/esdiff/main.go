@@ -1,19 +1,17 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
-	"reflect"
 	"strings"
 	"time"
 
+	"github.com/lytics/escp/esdiff"
 	"github.com/lytics/escp/esscroll"
 	"github.com/lytics/escp/estypes"
 )
@@ -32,6 +30,9 @@ func main() {
 	force := false
 	flag.BoolVar(&force, "force", force, "continue check even if document count varies")
 	flag.Parse()
+	if flag.NArg() != 2 {
+		fatalf("requires 2 arguments")
+	}
 	src := flag.Arg(0)
 	dst := flag.Arg(1)
 
@@ -39,6 +40,9 @@ func main() {
 		dst += "/"
 	}
 
+	if denom < 2 {
+		denom = 1
+	}
 	dice := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	resp, err := esscroll.Start(src, timeout, pagesz, nil)
@@ -65,86 +69,38 @@ func main() {
 	}
 
 	log.Printf("Scrolling over %d documents\n", resp.Total)
-	var checked, matched, fastmatch, mismatch, missing uint64
-	for origdoc := range resp.Hits {
+	var checked, matched, mismatch, missing uint64
+	for doc := range resp.Hits {
 		if denom == 1 || dice.Intn(denom) == 0 {
 			checked++
-
-			// Get the document from the target index
-			target := fmt.Sprintf("%s/%s/%s", dst, origdoc.Type, origdoc.ID)
-			resp, err := http.Get(target)
+			diff, err := esdiff.Check(doc, dst)
 			if err != nil {
-				fatalf("error contacting target: " + err.Error())
+				fatalf("fatal error: %v", err)
 			}
-
-			if resp.StatusCode != 200 {
-				log.Printf("%d    %s", resp.StatusCode, target)
-				missing++
-				ioutil.ReadAll(resp.Body)
-				resp.Body.Close()
-				continue
-			}
-
-			newdoc := estypes.Doc{}
-			if err := json.NewDecoder(resp.Body).Decode(&newdoc); err != nil {
-				log.Printf("ERROR %s -- %v", target, err)
-				ioutil.ReadAll(resp.Body)
-				resp.Body.Close()
-				continue
-			}
-
-			if origdoc.ID != newdoc.ID {
-				fatalf("metadata mismatch; coding error? ID %s != %s", origdoc.ID, newdoc.ID)
-			}
-			if origdoc.Type != newdoc.Type {
-				fatalf("metadata mismatch; coding error? Type %s != %s", origdoc.Type, newdoc.Type)
-			}
-			if origdoc.Index != newdoc.Index {
-				fatalf("metadata mismatch; coding error? Index %s != %s", origdoc.Index, newdoc.Index)
-			}
-
-			// Fast path
-			if bytes.Equal(origdoc.Source, newdoc.Source) {
+			switch diff {
+			case "":
 				matched++
-				fastmatch++
-				continue
-			}
-
-			// Slow path
-			origsrc := map[string]interface{}{}
-			if err := json.Unmarshal(origdoc.Source, &origsrc); err != nil {
-				fatalf("error unmarshalling original document; cannot compare: %s\n%v", origdoc.ID, err)
-			}
-			newsrc := make(map[string]interface{}, len(origsrc))
-			if err := json.Unmarshal(newdoc.Source, &newsrc); err != nil {
+			case esdiff.DiffMissing:
+				missing++
+				fmt.Println("MISS ", doc.ID)
+			default:
 				mismatch++
-				log.Printf("DIFF  %s -- error unmarshalling target doc: %v", origdoc.ID, err)
-				continue
+				fmt.Println("DIFF ", doc.ID)
 			}
-
-			if len(origsrc) != len(newsrc) {
-				mismatch++
-				log.Printf("DIFF  %s -- %d fields in source; %d fields in target", origdoc.ID, len(origsrc), len(newsrc))
-				continue
-			}
-
-			if !reflect.DeepEqual(origsrc, newsrc) {
-				mismatch++
-				log.Printf("DIFF  %s", origdoc.ID)
-				continue
-			}
-
-			// We're good!
-			matched++
 		}
 	}
 
-	log.Printf("Checked %d/%d (%.1f%%) documents; missing=%d mismatched=%d matched=%d (fastmatch=%d)",
+	log.Printf("Checked %d/%d (%.1f%%) documents; missing=%d mismatched=%d matched=%d",
 		checked, resp.Total, (float64(checked)/float64(resp.Total))*100.0,
-		missing, mismatch, matched, fastmatch)
+		missing, mismatch, matched)
+
+	if missing+mismatch > 0 {
+		os.Exit(99)
+	}
 }
 
 func fatalf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "fatal error: "+msg+"\n", args...)
+	flag.Usage()
 	os.Exit(2)
 }

@@ -6,6 +6,7 @@ type Meta struct {
 	ID    string `json:"_id"`
 	Type  string `json:"_type"`
 	Index string `json:"_index"`
+	//Version string `json:"_version"` //FIXME _version not in _search results?!
 }
 
 type Doc struct {
