@@ -24,3 +24,20 @@ type Results struct {
 	TimedOut bool   `json:"timed_out"`
 	ScrollID string `json:"_scroll_id"`
 }
+
+type IndexMeta struct {
+	Settings *Settings `json:"settings"`
+}
+
+type Settings struct {
+	Index *IndexSettings `json:"index"`
+}
+
+type IndexSettings struct {
+	Replicas int `json:"number_of_replicas,string"`
+	Shards   int `json:"number_of_shards,string"`
+}
+
+type AckResponse struct {
+	Ack bool `json:"acknowledged"`
+}
