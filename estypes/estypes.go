@@ -1,6 +1,9 @@
 package estypes
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"errors"
+)
 
 type Meta struct {
 	ID    string `json:"_id"`
@@ -25,19 +28,10 @@ type Results struct {
 	ScrollID string `json:"_scroll_id"`
 }
 
-type IndexMeta struct {
-	Settings *Settings `json:"settings"`
-}
-
-type Settings struct {
-	Index *IndexSettings `json:"index"`
-}
-
-type IndexSettings struct {
-	Replicas int `json:"number_of_replicas,string"`
-	Shards   int `json:"number_of_shards,string"`
-}
-
 type AckResponse struct {
 	Ack bool `json:"acknowledged"`
 }
+
+// ErrFailed should be returned any time Elasticsearch returns
+// acknowledged=false.
+var ErrUnack = errors.New("request unacknowledged")

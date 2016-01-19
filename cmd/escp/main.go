@@ -1,18 +1,15 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 
 	"github.com/lytics/escp/esbulk"
+	"github.com/lytics/escp/esindex"
 	"github.com/lytics/escp/esscroll"
-	"github.com/lytics/escp/estypes"
 )
 
 func main() {
@@ -49,52 +46,20 @@ func main() {
 		fatalf("error starting scroll: %v", err)
 	}
 
-	// Next create the index
+	// Copy over shards setting if it wasn't explicitly set
 	if shards == 0 {
-		// Get shards from original index
-		resp, err := http.Get(src)
+		idxmeta, err := esindex.Get(src)
 		if err != nil {
-			fatalf("error contacting source Elasticsearch: %v", err)
-		}
-		if resp.StatusCode != 200 {
-			fatalf("non-200 status code from source Elasticsearch: %d", resp.StatusCode)
-		}
-
-		idxmetamap := make(map[string]*estypes.IndexMeta, 1)
-		if err := json.NewDecoder(resp.Body).Decode(&idxmetamap); err != nil {
-			fatalf("error decoding index metadata: %v", err)
-		}
-		parts := strings.Split(src, "/")
-		idxname := parts[len(parts)-1]
-		idxmeta, ok := idxmetamap[idxname]
-		if !ok {
-			fatalf("index %s not found", idxname)
-		}
-		if idxmeta.Settings.Index.Shards == 0 {
-			fatalf("unable to read existing shards for index %s", idxname)
+			fatalf("failed getting source index settings: %v", err)
 		}
 		shards = idxmeta.Settings.Index.Shards
 	}
 
+	// Create the destination index unless explicitly told not to
 	if !skipcreate {
-		buf, err := json.Marshal(&estypes.IndexMeta{Settings: &estypes.Settings{Index: &estypes.IndexSettings{Shards: shards}}})
-		if err != nil {
-			fatalf("error encoding index creation json: %v", err)
-		}
-		req, err := http.NewRequest("PUT", dst, bytes.NewReader(buf))
-		if err != nil {
-			fatalf("error creating index creation request: %v", err)
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			fatalf("error creating index %s: %v", dst, err)
-		}
-		ackr := estypes.AckResponse{}
-		if err := json.NewDecoder(resp.Body).Decode(&ackr); err != nil {
-			fatalf("error decoding index creation response: %v", err)
-		}
-		if !ackr.Ack {
-			fatalf("failed to create destination index %s", dst)
+		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{Shards: shards}}}
+		if err := esindex.Create(dst, &m); err != nil {
+			fatalf("failed creating index: %v", err)
 		}
 	}
 
