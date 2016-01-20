@@ -17,10 +17,25 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage of %s http://HOST1:9200/INDEX1 http://HOST2:9200/INDEX2\n", os.Args[0])
 		flag.PrintDefaults()
 	}
+
+	// Index creation settings
 	shards := 0
 	flag.IntVar(&shards, "shards", shards, "number of shards target index will have (default = same as old index)")
 	skipcreate := false
 	flag.BoolVar(&skipcreate, "skipcreate", skipcreate, "skip destination index creation")
+
+	// Tunables
+	scrolltimeout := "15m"
+	flag.StringVar(&scrolltimeout, "scrolltime", scrolltimeout, "time to keep scroll alive between requests")
+	scrollpage := 1000
+	flag.IntVar(&scrollpage, "scrollpage", scrollpage, "size of scroll pages (will actually be per source shard)")
+	scrolldocs := 1000
+	flag.IntVar(&scrolldocs, "scrolldocs", scrolldocs, "number of `docs` to buffer in memory from scroll")
+	bulksz := 20 * 1024
+	flag.IntVar(&bulksz, "bulksz", bulksz, "size of bulk upload buffer in `KB`")
+	bulkpar := 3
+	flag.IntVar(&bulkpar, "bulkpar", bulkpar, "number of parallel bulk upload buffers to use")
+
 	flag.Parse()
 	if flag.NArg() != 2 {
 		fatalf("expected 2 arguments, found %d\n", flag.NArg())
@@ -41,7 +56,7 @@ func main() {
 	idx := dstparts[len(dstparts)-1]
 
 	// Start the scroll first to make sure the source parameter is valid
-	resp, err := esscroll.Start(src+"/_search", "10m", 1000, nil)
+	resp, err := esscroll.Start(src+"/_search", scrolltimeout, scrollpage, scrolldocs, nil)
 	if err != nil {
 		fatalf("error starting scroll: %v", err)
 	}
@@ -65,7 +80,7 @@ func main() {
 
 	log.Printf("Copying %d documents from %s to %s", resp.Total, src, dst)
 
-	indexer := esbulk.NewIndexer(dst+"/_bulk", idx, resp.Hits)
+	indexer := esbulk.NewIndexer(dst+"/_bulk", idx, bulksz, bulkpar, resp.Hits)
 
 	if err := <-indexer.Err(); err != nil {
 		log.Fatalf("Error indexing: %v", err)

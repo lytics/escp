@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"sync"
 
 	"github.com/lytics/escp/estypes"
 )
@@ -31,27 +32,51 @@ func (i *Indexer) Err() chan error { return i.err }
 // NewIndexer creates a new Elasticsearch bulk indexer. URL should be of the
 // form http://eshost:9200/_bulk.
 //
+// bufsz is the size of the upload buffer in kilobytes. bufsz < 1 will default
+// to 20mb.
+//
+// par is the number of parallel buffers to use. par < 1 will default to 3.
+//
 // Sends to docs should select on Indexer.Err to prevent deadlocking in case of
 // indexer error.
-func NewIndexer(url string, index string, docs <-chan *estypes.Doc) *Indexer {
+func NewIndexer(url string, index string, bufsz, par int, docs <-chan *estypes.Doc) *Indexer {
 	indexer := &Indexer{
 		docs: docs,
 
-		// buffer of 1 to allow goroutine to exit before value is read
-		err: make(chan error, 1),
+		// buffer an error per parallel upload buffer
+		err: make(chan error, par),
+	}
+
+	if bufsz < 1 {
+		bufsz = 20 * 1024
+	}
+	if par < 1 {
+		par = 3
 	}
 
 	go func() {
 		defer close(indexer.err)
 
-		// Batches are flushed when they exceed 25mb, so give the buffer plenty of
-		// breathing room to avoid resizing.
-		const uploadat = 25 * 1024 * 1024
-		const bufsz = 40 * 1024 * 1024
-		buf := bytes.NewBuffer(make([]byte, 0, bufsz))
+		uploadat := bufsz
+		if bufsz > 1000 {
+			// upload at 500kb less than buffer size to avoid buffer resizing
+			uploadat = bufsz - 500
+		}
+
+		wg := new(sync.WaitGroup)
+		bufs := make(chan *bytes.Buffer, par)
+		for i := 0; i < par; i++ {
+			bufs <- bytes.NewBuffer(make([]byte, 0, bufsz))
+		}
 		action := BulkAction{}
-		enc := json.NewEncoder(buf)
+		var enc *json.Encoder
+		var buf *bytes.Buffer
+
 		for doc := range docs {
+			if buf == nil {
+				buf = <-bufs
+				enc = json.NewEncoder(buf)
+			}
 
 			// Write action
 			action.Index = &doc.Meta
@@ -69,13 +94,19 @@ func NewIndexer(url string, index string, docs <-chan *estypes.Doc) *Indexer {
 
 			// Actually do the bulk insert once the buffer is full
 			if buf.Len() >= uploadat {
-				if err := upload(url, buf.Bytes()); err != nil {
-					indexer.err <- err
-					return
-				}
+				wg.Add(1)
+				go func(b *bytes.Buffer) {
+					wg.Done()
+					if err := upload(url, b.Bytes()); err != nil {
+						indexer.err <- err
+						return
+					}
 
-				// Reset the buffer
-				buf.Reset()
+					// Reset the buffer
+					b.Reset()
+					bufs <- b
+				}(buf)
+				buf = nil // go to next buffer in buffer pool
 			}
 		}
 
@@ -85,6 +116,7 @@ func NewIndexer(url string, index string, docs <-chan *estypes.Doc) *Indexer {
 				indexer.err <- err
 			}
 		}
+		wg.Wait() // wait for async uploads to complete too
 	}()
 
 	return indexer

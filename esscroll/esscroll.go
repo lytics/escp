@@ -40,7 +40,7 @@ func (r *Response) Err() error {
 //
 // When Response.Hits is closed, Response.Err() should be checked to see if the
 // scroll completed successfully or not.
-func Start(surl, timeout string, pagesz int, filter map[string]interface{}) (*Response, error) {
+func Start(surl, timeout string, pagesz, buflen int, filter map[string]interface{}) (*Response, error) {
 	origurl, err := url.Parse(surl)
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func Start(surl, timeout string, pagesz int, filter map[string]interface{}) (*Re
 		return nil, fmt.Errorf("invalid response")
 	}
 
-	out := make(chan *estypes.Doc, pagesz) // each result will actually get pagesz*shards documents
+	out := make(chan *estypes.Doc, buflen) // each result will actually get pagesz*shards documents
 	r := Response{Total: result.Hits.Total, Hits: out, mu: new(sync.Mutex)}
 
 	go func() {
@@ -91,6 +91,7 @@ func Start(surl, timeout string, pagesz int, filter map[string]interface{}) (*Re
 		var done, lastdone uint64
 		logdur := 10 * time.Second
 		last := time.Now()
+		blocked := 0
 
 		for {
 			// Get the next page
@@ -123,15 +124,21 @@ func Start(surl, timeout string, pagesz int, filter map[string]interface{}) (*Re
 			}
 
 			for _, hit := range result.Hits.Hits {
+				s := time.Now()
 				out <- hit
+				if time.Now().After(s.Add(time.Second)) {
+					blocked++
+				}
 			}
 			done += uint64(len(result.Hits.Hits))
 			lastdone += uint64(len(result.Hits.Hits))
 
 			if time.Now().After(last.Add(logdur)) {
-				log.Printf("%d / %d documents scrolled (%d per second)", done, r.Total, lastdone/uint64(math.Max(1, time.Now().Sub(last).Seconds())))
+				log.Printf("%d / %d documents scrolled (%d per second; %d blocked)",
+					done, r.Total, lastdone/uint64(math.Max(1, time.Now().Sub(last).Seconds())), blocked)
 				last = time.Now()
 				lastdone = 0
+				blocked = 0
 
 				// increase the log duration over time so we don't spam logs when no
 				// operator is even observing it
