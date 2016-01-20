@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/lytics/escp/estypes"
 )
@@ -85,6 +88,10 @@ func Start(surl, timeout string, pagesz int, filter map[string]interface{}) (*Re
 
 		baseurl := origurl.Scheme + "://" + origurl.Host + "/_search/scroll?scroll=" + timeout + "&scroll_id="
 
+		var done, lastdone uint64
+		logdur := 10 * time.Second
+		last := time.Now()
+
 		for {
 			// Get the next page
 			resp, err = Client.Get(baseurl + result.ScrollID)
@@ -117,6 +124,20 @@ func Start(surl, timeout string, pagesz int, filter map[string]interface{}) (*Re
 
 			for _, hit := range result.Hits.Hits {
 				out <- hit
+			}
+			done += uint64(len(result.Hits.Hits))
+			lastdone += uint64(len(result.Hits.Hits))
+
+			if time.Now().After(last.Add(logdur)) {
+				log.Printf("%d / %d documents scrolled (%d per second)", done, r.Total, lastdone/uint64(math.Max(1, time.Now().Sub(last).Seconds())))
+				last = time.Now()
+				lastdone = 0
+
+				// increase the log duration over time so we don't spam logs when no
+				// operator is even observing it
+				if logdur < 15*time.Minute {
+					logdur += 15 * time.Second
+				}
 			}
 		}
 	}()
