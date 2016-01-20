@@ -39,7 +39,7 @@ func (i *Indexer) Err() chan error { return i.err }
 //
 // Sends to docs should select on Indexer.Err to prevent deadlocking in case of
 // indexer error.
-func NewIndexer(url string, index string, bufsz, par int, docs <-chan *estypes.Doc) *Indexer {
+func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estypes.Doc) *Indexer {
 	indexer := &Indexer{
 		docs: docs,
 
@@ -53,6 +53,11 @@ func NewIndexer(url string, index string, bufsz, par int, docs <-chan *estypes.D
 	if par < 1 {
 		par = 3
 	}
+	targets := make([]string, len(hosts))
+	for i, h := range hosts {
+		targets[i] = fmt.Sprintf("http://%s/_bulk", h)
+	}
+	ti := 0
 
 	go func() {
 		defer close(indexer.err)
@@ -96,8 +101,8 @@ func NewIndexer(url string, index string, bufsz, par int, docs <-chan *estypes.D
 			if buf.Len() >= uploadat {
 				wg.Add(1)
 				go func(b *bytes.Buffer) {
-					wg.Done()
-					if err := upload(url, b.Bytes()); err != nil {
+					defer wg.Done()
+					if err := upload(targets[ti], b.Bytes()); err != nil {
 						indexer.err <- err
 						return
 					}
@@ -106,13 +111,16 @@ func NewIndexer(url string, index string, bufsz, par int, docs <-chan *estypes.D
 					b.Reset()
 					bufs <- b
 				}(buf)
-				buf = nil // go to next buffer in buffer pool
+
+				buf = nil                    // go to next buffer in buffer pool
+				ti = (ti + 1) % len(targets) // go to the next host
 			}
 		}
 
 		// No more docs, if the buffer is non-empty upload it
 		if buf.Len() > 0 {
-			if err := upload(url, buf.Bytes()); err != nil {
+			ti = (ti + 1) % len(targets)
+			if err := upload(targets[ti], buf.Bytes()); err != nil {
 				indexer.err <- err
 			}
 		}

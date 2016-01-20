@@ -89,9 +89,9 @@ func Start(surl, timeout string, pagesz, buflen int, filter map[string]interface
 		baseurl := origurl.Scheme + "://" + origurl.Host + "/_search/scroll?scroll=" + timeout + "&scroll_id="
 
 		var done, lastdone uint64
+		var blocked time.Duration
 		logdur := 10 * time.Second
 		last := time.Now()
-		blocked := 0
 
 		for {
 			// Get the next page
@@ -120,22 +120,26 @@ func Start(surl, timeout string, pagesz, buflen int, filter map[string]interface
 
 			if len(result.Hits.Hits) == 0 {
 				// Completed!
+				elapsed := time.Now().Sub(last)
+				blockedpct := blocked.Seconds() / elapsed.Seconds()
+				log.Printf("%d / %d documents scrolled (%d per second; %d%% blocked)",
+					done, r.Total, lastdone/uint64(math.Max(1, elapsed.Seconds())), int(blockedpct*100))
 				return
 			}
 
 			for _, hit := range result.Hits.Hits {
 				s := time.Now()
 				out <- hit
-				if time.Now().After(s.Add(time.Second)) {
-					blocked++
-				}
+				blocked += time.Now().Sub(s)
 			}
 			done += uint64(len(result.Hits.Hits))
 			lastdone += uint64(len(result.Hits.Hits))
 
 			if time.Now().After(last.Add(logdur)) {
-				log.Printf("%d / %d documents scrolled (%d per second; %d blocked)",
-					done, r.Total, lastdone/uint64(math.Max(1, time.Now().Sub(last).Seconds())), blocked)
+				elapsed := time.Now().Sub(last)
+				blockedpct := blocked.Seconds() / elapsed.Seconds()
+				log.Printf("%d / %d documents scrolled (%d per second; %d%% blocked)",
+					done, r.Total, lastdone/uint64(math.Max(1, elapsed.Seconds())), int(blockedpct*100))
 				last = time.Now()
 				lastdone = 0
 				blocked = 0

@@ -14,7 +14,7 @@ import (
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage of %s http://HOST1:9200/INDEX1 http://HOST2:9200/INDEX2\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage of %s http://HOST1:9200/INDEX1 HOST2:9200,HOST3:9200,HOST4:9200 INDEX2\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 
@@ -33,12 +33,18 @@ func main() {
 	flag.IntVar(&scrolldocs, "scrolldocs", scrolldocs, "number of `docs` to buffer in memory from scroll")
 	bulksz := 20 * 1024
 	flag.IntVar(&bulksz, "bulksz", bulksz, "size of bulk upload buffer in `KB`")
-	bulkpar := 3
-	flag.IntVar(&bulkpar, "bulkpar", bulkpar, "number of parallel bulk upload buffers to use")
+	bulkpar := 0
+	flag.IntVar(&bulkpar, "bulkpar", bulkpar, "number of parallel bulk upload buffers to use; 0 = len(hosts)*2")
+	delayrefresh := true
+	flag.BoolVar(&delayrefresh, "delayrefresh", delayrefresh, "delay refresh until bulk indexing is complete")
+	refreshint := "1s"
+	flag.StringVar(&refreshint, "refreshint", refreshint, "if indexing is delayed, what to set the refresh interval to after copy")
+	maxsegs := 5
+	flag.IntVar(&maxsegs, "maxsegs", maxsegs, "if indexing is delayed, the max number of segments for the optimized index")
 
 	flag.Parse()
-	if flag.NArg() != 2 {
-		fatalf("expected 2 arguments, found %d\n", flag.NArg())
+	if flag.NArg() != 3 {
+		fatalf("expected 3 arguments, found %d\n", flag.NArg())
 	}
 	if shards > 0 && skipcreate {
 		fatalf("cannot set shards and skip index creation")
@@ -48,12 +54,17 @@ func main() {
 	if strings.HasSuffix(src, "/") {
 		src = src[:len(src)-1]
 	}
-	dst := flag.Arg(1)
-	if strings.HasSuffix(dst, "/") {
-		dst = dst[:len(dst)-1]
+	dsts := strings.Split(flag.Arg(1), ",")
+	if len(dsts) < 1 {
+		fatalf("need at least one destination host")
 	}
-	dstparts := strings.Split(dst, "/")
-	idx := dstparts[len(dstparts)-1]
+	if bulkpar == 0 {
+		bulkpar = len(dsts) * 2
+	}
+	idx := flag.Arg(2)
+
+	// Use the first destination host as the "primary"
+	pridst := fmt.Sprintf("http://%s/%s", dsts[0], idx)
 
 	// Start the scroll first to make sure the source parameter is valid
 	resp, err := esscroll.Start(src+"/_search", scrolltimeout, scrollpage, scrolldocs, nil)
@@ -67,20 +78,24 @@ func main() {
 		if err != nil {
 			fatalf("failed getting source index settings: %v", err)
 		}
-		shards = idxmeta.Settings.Index.Shards
+		shards = *idxmeta.Settings.Index.Shards
 	}
 
 	// Create the destination index unless explicitly told not to
 	if !skipcreate {
-		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{Shards: shards}}}
-		if err := esindex.Create(dst, &m); err != nil {
+		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{Shards: &shards}}}
+		if delayrefresh {
+			// Disable refreshing until end
+			m.Settings.Index.RefreshInterval = "-1"
+		}
+		if err := esindex.Create(pridst, &m); err != nil {
 			fatalf("failed creating index: %v", err)
 		}
 	}
 
-	log.Printf("Copying %d documents from %s to %s", resp.Total, src, dst)
+	log.Printf("Copying %d documents from %s to %s/%s", resp.Total, src, flag.Arg(1), idx)
 
-	indexer := esbulk.NewIndexer(dst+"/_bulk", idx, bulksz, bulkpar, resp.Hits)
+	indexer := esbulk.NewIndexer(dsts, idx, bulksz, bulkpar, resp.Hits)
 
 	if err := <-indexer.Err(); err != nil {
 		log.Fatalf("Error indexing: %v", err)
@@ -88,6 +103,22 @@ func main() {
 
 	if err := resp.Err(); err != nil {
 		log.Fatalf("Error searching: %v", err)
+	}
+
+	if delayrefresh {
+		log.Printf("Copy completed. Refreshing index. This may take some time.")
+		if err := esindex.Optimize(pridst, maxsegs); err != nil {
+			log.Printf("Error optimizing: %v", err)
+			log.Fatalf("Copy completed successfully. Optimize and reenable refreshing manually.")
+		}
+		log.Printf("Optimize completed. Setting refresh interval to %s", refreshint)
+
+		// update refresh setting
+		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{RefreshInterval: refreshint}}}
+		if err := esindex.Update(pridst, &m); err != nil {
+			log.Printf("Error enabling refreshing: %v", err)
+			log.Fatalf("Copy completed successfully. Reenable refreshing manually.")
+		}
 	}
 
 	log.Printf("Completed")
