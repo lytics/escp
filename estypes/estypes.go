@@ -1,6 +1,9 @@
 package estypes
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"errors"
+)
 
 type Meta struct {
 	ID    string `json:"_id"`
@@ -24,3 +27,11 @@ type Results struct {
 	TimedOut bool   `json:"timed_out"`
 	ScrollID string `json:"_scroll_id"`
 }
+
+type AckResponse struct {
+	Ack bool `json:"acknowledged"`
+}
+
+// ErrFailed should be returned any time Elasticsearch returns
+// acknowledged=false.
+var ErrUnack = errors.New("request unacknowledged")
