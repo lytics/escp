@@ -118,7 +118,7 @@ func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estyp
 		}
 
 		// No more docs, if the buffer is non-empty upload it
-		if buf.Len() > 0 {
+		if buf != nil && buf.Len() > 0 {
 			ti = (ti + 1) % len(targets)
 			if err := upload(targets[ti], buf.Bytes()); err != nil {
 				indexer.err <- err
