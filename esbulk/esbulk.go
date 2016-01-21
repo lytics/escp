@@ -100,9 +100,9 @@ func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estyp
 			// Actually do the bulk insert once the buffer is full
 			if buf.Len() >= uploadat {
 				wg.Add(1)
-				go func(b *bytes.Buffer) {
+				go func(b *bytes.Buffer, target string) {
 					defer wg.Done()
-					if err := upload(targets[ti], b.Bytes()); err != nil {
+					if err := upload(target, b.Bytes()); err != nil {
 						indexer.err <- err
 						return
 					}
@@ -110,7 +110,7 @@ func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estyp
 					// Reset the buffer
 					b.Reset()
 					bufs <- b
-				}(buf)
+				}(buf, targets[ti])
 
 				buf = nil                    // go to next buffer in buffer pool
 				ti = (ti + 1) % len(targets) // go to the next host
