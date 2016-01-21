@@ -37,8 +37,8 @@ func main() {
 	flag.IntVar(&bulkpar, "bulkpar", bulkpar, "number of parallel bulk upload buffers to use; 0 = len(hosts)*2")
 	delayrefresh := true
 	flag.BoolVar(&delayrefresh, "delayrefresh", delayrefresh, "delay refresh until bulk indexing is complete")
-	refreshint := "1s"
-	flag.StringVar(&refreshint, "refreshint", refreshint, "if indexing is delayed, what to set the refresh interval to after copy")
+	refreshint := ""
+	flag.StringVar(&refreshint, "refreshint", refreshint, "if indexing is delayed, what to set the refresh interval to after copy; defaults to old index's setting or 1s")
 	maxsegs := 5
 	flag.IntVar(&maxsegs, "maxsegs", maxsegs, "if indexing is delayed, the max number of segments for the optimized index")
 
@@ -66,19 +66,30 @@ func main() {
 	// Use the first destination host as the "primary"
 	pridst := fmt.Sprintf("http://%s/%s", dsts[0], idx)
 
-	// Start the scroll first to make sure the source parameter is valid
-	resp, err := esscroll.Start(src+"/_search", scrolltimeout, scrollpage, scrolldocs, nil)
+	idxmeta, err := esindex.Get(src)
 	if err != nil {
-		fatalf("error starting scroll: %v", err)
+		fatalf("failed getting source index metadata: %v", err)
 	}
 
 	// Copy over shards setting if it wasn't explicitly set
 	if shards == 0 {
-		idxmeta, err := esindex.Get(src)
-		if err != nil {
-			fatalf("failed getting source index settings: %v", err)
-		}
 		shards = *idxmeta.Settings.Index.Shards
+	}
+
+	// Copy over refreshint if it wasn't set in options but was set on the source
+	// index
+	if refreshint == "" {
+		if idxmeta.Settings.Index.RefreshInterval != "" {
+			refreshint = idxmeta.Settings.Index.RefreshInterval
+		} else {
+			refreshint = "1s"
+		}
+	}
+
+	// Start the scroll first to make sure the source parameter is valid
+	resp, err := esscroll.Start(src+"/_search", scrolltimeout, scrollpage, scrolldocs, nil)
+	if err != nil {
+		fatalf("error starting scroll: %v", err)
 	}
 
 	// Create the destination index unless explicitly told not to
