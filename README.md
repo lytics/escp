@@ -12,8 +12,8 @@ go get -v github.com/lytics/escp/...
 ```
 
 ```sh
-# Copy srcindex on host1 to dstindex on host2
-escp http://host1:9200/srcindex/_search http://host2:9200/_bulk dstindex
+# Copy srcindex on host1 to dstindex on host2,host3
+escp http://host1:9200/srcindex host2:9200,host3:9200 dstindex
 ```
 
 ```sh

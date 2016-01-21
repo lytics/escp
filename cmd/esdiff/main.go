@@ -45,7 +45,7 @@ func main() {
 	}
 	dice := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	resp, err := esscroll.Start(src, timeout, pagesz, nil)
+	resp, err := esscroll.Start(src, timeout, pagesz, 0, nil)
 	if err != nil {
 		fatalf("error starting scroll: %v", err)
 	}
