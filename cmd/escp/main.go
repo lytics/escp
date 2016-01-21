@@ -78,12 +78,8 @@ func main() {
 
 	// Copy over refreshint if it wasn't set in options but was set on the source
 	// index
-	if refreshint == "" {
-		if idxmeta.Settings.Index.RefreshInterval != "" {
-			refreshint = idxmeta.Settings.Index.RefreshInterval
-		} else {
-			refreshint = "1s"
-		}
+	if refreshint == "" && idxmeta.Settings.Index.RefreshInterval != "" {
+		refreshint = idxmeta.Settings.Index.RefreshInterval
 	}
 
 	// Start the scroll first to make sure the source parameter is valid
@@ -94,7 +90,10 @@ func main() {
 
 	// Create the destination index unless explicitly told not to
 	if !skipcreate {
-		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{Shards: &shards}}}
+		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{
+			Shards:          &shards,
+			RefreshInterval: refreshint,
+		}}}
 		if delayrefresh {
 			// Disable refreshing until end
 			m.Settings.Index.RefreshInterval = "-1"
