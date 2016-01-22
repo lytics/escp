@@ -78,8 +78,12 @@ func main() {
 
 	// Copy over refreshint if it wasn't set in options but was set on the source
 	// index
-	if refreshint == "" && idxmeta.Settings.Index.RefreshInterval != "" {
-		refreshint = idxmeta.Settings.Index.RefreshInterval
+	if refreshint == "" {
+		if idxmeta.Settings.Index.RefreshInterval != "" {
+			refreshint = idxmeta.Settings.Index.RefreshInterval
+		} else {
+			refreshint = "1s" // default
+		}
 	}
 
 	// Start the scroll first to make sure the source parameter is valid
