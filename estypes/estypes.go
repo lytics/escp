@@ -63,7 +63,7 @@ type ShardAttributes struct {
 	State   string `json:"state"`
 	Primary bool   `json:"primary"`
 	Node    string `json:"node"`
-	//Relocating bool   `json:"relocating_node"`
+	Relocating bool   `json:"relocating_node"`
 	Shard int    `json:"shard"`
 	Index string `json:"index"`
 }
