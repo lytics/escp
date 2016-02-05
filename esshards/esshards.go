@@ -41,11 +41,11 @@ func NodeIDs(endpoint estypes.SearchShardsEndpoint) map[string]map[string][]esty
 	return nodemap
 }
 
-func NodesFromHRName(endpoint estypes.SearchShardsEndpoint, esNames map[string]struct{}) map[string]struct{} {
-	matching := make(map[string]struct{})
+func NodesFromHRName(endpoint estypes.SearchShardsEndpoint, esNames map[string]struct{}) map[string]string {
+	matching := make(map[string]string)
 	for k, v := range endpoint.Nodes {
 		if _, e := esNames[v.Name]; e {
-			matching[k] = struct{}{}
+			matching[k] = v.Name
 		}
 	}
 	return matching
@@ -109,7 +109,7 @@ func NodeIndexSets(info estypes.SearchShardsEndpoint) map[string]map[string]stru
 	return primaryNodes
 }
 
-func CommonPrimaryIndexes(info *estypes.SearchShardsEndpoint, nodeIDs map[string]struct{}) map[string]struct{} {
+func CommonPrimaryIndexes(info *estypes.SearchShardsEndpoint, nodeIDs map[string]string) map[string]struct{} {
 	commonIndexes := make(map[string]struct{})
 	nodeSets := NodeIndexSets(*info)
 
