@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/lytics/escp/estypes"
@@ -147,6 +148,25 @@ func upload(url string, buf []byte) error {
 		return fmt.Errorf("esbulk: error decoding response: %v", err)
 	}
 	if bresp.Errors {
+		if bresp.Items != nil {
+			items := []map[string]*BulkActionResponseItem{}
+			if err := json.Unmarshal(*bresp.Items, &items); err != nil {
+				return fmt.Errorf("esbulk: errors encountered when indexing and unable to get details: %v", err)
+			}
+			msgs := make([]string, 0, len(items))
+			ok := 0
+			for _, item := range items {
+				for action, detail := range item {
+					switch {
+					case detail.Status >= 200 && detail.Status < 300:
+						ok++
+					default:
+						msgs = append(msgs, fmt.Sprintf("%s index=%s type=%s id=%s status=%d failed: %s", action, detail.Index, detail.Type, detail.ID, detail.Status, detail.Error))
+					}
+				}
+			}
+			return fmt.Errorf("esbulk: %d errors (%d ok) encountered when indexing:\n%s", len(msgs), ok, strings.Join(msgs, "\n "))
+		}
 		return fmt.Errorf("esbulk: errors encountered when indexing")
 	}
 	return nil
