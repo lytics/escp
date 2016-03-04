@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/lytics/escp/esbulk"
 	"github.com/lytics/escp/esindex"
@@ -41,6 +42,8 @@ func main() {
 	flag.StringVar(&refreshint, "refreshint", refreshint, "if indexing is delayed, what to set the refresh interval to after copy; defaults to old index's setting or 1s")
 	maxsegs := 5
 	flag.IntVar(&maxsegs, "maxsegs", maxsegs, "if indexing is delayed, the max number of segments for the optimized index")
+	createdelay := time.Second
+	flag.DurationVar(&createdelay, "createdelay", createdelay, "time to sleep after index creation to let cluster go green")
 
 	flag.Parse()
 	if flag.NArg() != 3 {
@@ -94,6 +97,7 @@ func main() {
 
 	// Create the destination index unless explicitly told not to
 	if !skipcreate {
+		log.Printf("Creating index %s with shards=%d refresh_interval=%s delay-refresh=%t", idx, shards, refreshint, delayrefresh)
 		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{
 			Shards:          &shards,
 			RefreshInterval: refreshint,
@@ -105,6 +109,8 @@ func main() {
 		if err := esindex.Create(pridst, &m); err != nil {
 			fatalf("failed creating index: %v", err)
 		}
+
+		time.Sleep(createdelay)
 	}
 
 	log.Printf("Copying %d documents from %s to %s/%s", resp.Total, src, flag.Arg(1), idx)
