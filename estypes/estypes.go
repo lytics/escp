@@ -114,3 +114,25 @@ func (is IndexSort) Less(i, j int) bool {
 	}
 	return is[i].BytesPerShard < is[j].BytesPerShard
 }
+
+/*
+Structs for the /_stats endpoint
+*/
+type Stats struct {
+	All     StatsAll                `json:"_all"`
+	Shards  StatsShards             `json:"_shards"`
+	Indices map[string]StatsIndices `json:"indices"`
+}
+
+type StatsAll struct{}
+type StatsShards struct{}
+
+type StatsIndices struct {
+	Primaries IndexPrimary `json:"primaries"`
+	//Totals    IndexTotal   `json:"total"`
+}
+
+// Index Primary Data
+type IndexPrimary struct {
+	//Store IndexStore `json:"store"`
+}
