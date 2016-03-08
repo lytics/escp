@@ -82,19 +82,19 @@ func TestMatching(t *testing.T) {
 }
 
 func TestCommonNodes(t *testing.T) {
-	nodes := make(map[string]struct{})
-	nodes["uid1"] = struct{}{}
-	nodes["uid2"] = struct{}{}
-	nodes["uid3"] = struct{}{}
+	nodes := make(map[string]string)
+	nodes["uid1"] = "es1"
+	nodes["uid2"] = "es2"
+	nodes["uid3"] = "es3"
 	cmi := CommonPrimaryIndexes(endpointInfo, nodes)
 
 	if _, e := cmi["index0"]; !e {
 		t.Errorf("index0 primary shards not matched between uids[1,2,3]")
 	}
 
-	nodes = make(map[string]struct{})
-	nodes["uid2"] = struct{}{}
-	nodes["uid4"] = struct{}{}
+	nodes = make(map[string]string)
+	nodes["uid2"] = "es2"
+	nodes["uid4"] = "es4"
 	cmi = CommonPrimaryIndexes(endpointInfo, nodes)
 
 	if _, e := cmi["index1"]; !e {
