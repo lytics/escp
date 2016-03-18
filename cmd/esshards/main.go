@@ -15,7 +15,7 @@ func main() {
 	var nodesRaw string
 	log.SetLevel(log.InfoLevel)
 
-	flag.StringVar(&nodesRaw, "nodes", "", "Nodes to find common primary shards")
+	flag.StringVar(&nodesRaw, "nodes", "", "Nodes to find common primary shards eg: \"es1,es2,es3\"")
 	flag.StringVar(&hostAddr, "host", "http://localhost:9200/", "Elasticsearch query address")
 	flag.Parse()
 
