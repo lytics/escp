@@ -1,4 +1,8 @@
 cmd/escp/escp
 cmd/esdiff/esdiff
+cmd/esshards/esshards
+cmd/shardsize/shardsize
 
 .*.swp
+
+

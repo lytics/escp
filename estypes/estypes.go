@@ -134,5 +134,30 @@ type StatsIndices struct {
 
 // Index Primary Data
 type IndexPrimary struct {
-	//Store IndexStore `json:"store"`
+	Store IndexStore `json:"store"`
+}
+
+type IndexStore struct {
+	IndexByteSize int `json:"size_in_bytes"`
+}
+
+type IndexInfo struct {
+	Name          string
+	ByteSize      int
+	ShardCount    int
+	BytesPerShard int
+}
+
+type IndexSort []IndexInfo
+
+func (is IndexSort) Len() int      { return len(is) }
+func (is IndexSort) Swap(i, j int) { is[i], is[j] = is[j], is[i] }
+func (is IndexSort) Less(i, j int) bool {
+	if is[i].BytesPerShard == 0 {
+		is[i].BytesPerShard = is[i].ByteSize / is[i].ShardCount
+	}
+	if is[j].BytesPerShard == 0 {
+		is[j].BytesPerShard = is[j].ByteSize / is[j].ShardCount
+	}
+	return is[i].BytesPerShard < is[j].BytesPerShard
 }
