@@ -37,18 +37,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error querying shard info from Elasticsearch:\n%#v", err)
 	}
-	shards := shardInfo.Shards
-	shardCount := make(map[string]int)
-	for _, s := range shards {
-		//log.Infof("%s %d", s.Index, s.Shard)
-		//log.Infof("%#v", s[0])
-		//log.Infof("%s %d %v", s[0].Index, s[0].Shard, s[0].Primary)
-		if _, ok := shardCount[s[0].Index]; !ok {
-			shardCount[s[0].Index] = 1
-		} else {
-			shardCount[s[0].Index]++
-		}
-	}
+
+	shardCount := esstats.CountShards(shardInfo.Shards)
 
 	indexList := make([]estypes.IndexInfo, 0)
 	for k, v := range shardCount {
@@ -56,7 +46,6 @@ func main() {
 		ii.ShardCount = v
 		indices[k] = ii
 		indexList = append(indexList, ii)
-		//log.Infof("%#v", indices[k])
 	}
 
 	sort.Sort(estypes.IndexSort(indexList))
