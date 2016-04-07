@@ -63,6 +63,7 @@ type ShardAttributes struct {
 	State   string `json:"state"`
 	Primary bool   `json:"primary"`
 	Node    string `json:"node"`
+<<<<<<< HEAD
 	Relocating bool   `json:"relocating_node"`
 	Shard int    `json:"shard"`
 	Index string `json:"index"`
@@ -113,6 +114,11 @@ func (is IndexSort) Less(i, j int) bool {
 		is[j].BytesPerShard = is[j].ByteSize / is[j].ShardCount
 	}
 	return is[i].BytesPerShard < is[j].BytesPerShard
+=======
+	//Relocating bool   `json:"relocating_node"`
+	Shard int    `json:"shard"`
+	Index string `json:"index"`
+>>>>>>> relocating_node was breaking json marshalling
 }
 
 /*
