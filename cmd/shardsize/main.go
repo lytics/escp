@@ -8,6 +8,7 @@ import (
 	"github.com/lytics/escp/esshards"
 	"github.com/lytics/escp/esstats"
 	"github.com/lytics/escp/estypes"
+	"github.com/pivotal-golang/bytefmt"
 )
 
 func main() {
@@ -44,13 +45,17 @@ func main() {
 	for k, v := range shardCount {
 		ii := indices[k]
 		ii.ShardCount = v
+		ii.CalculateShards()
 		indices[k] = ii
 		indexList = append(indexList, ii)
 	}
 
 	sort.Sort(estypes.IndexSort(indexList))
-	for i, sc := range indexList {
-		log.Infof("%d: %#v", i, sc)
+	log.Infof("         Index          Size   Shards (Optimal Shards)")
+	for _, sc := range indexList {
+		if sc.OptimalShards-sc.ShardCount > 10 {
+			log.Infof("%20s: %7s  %3d:%8d", sc.Name, bytefmt.ByteSize(uint64(sc.ByteSize)), sc.ShardCount, sc.OptimalShards)
+		}
 	}
 
 }

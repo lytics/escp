@@ -3,6 +3,7 @@ package estypes
 import (
 	"encoding/json"
 	"errors"
+	"math"
 )
 
 type Meta struct {
@@ -100,6 +101,32 @@ type IndexInfo struct {
 	ByteSize      int
 	ShardCount    int
 	BytesPerShard int
+	OptimalShards int
+}
+
+var GBytes = 10737418240
+
+// https://github.com/golang/go/issues/4594#issuecomment-135336012
+func round(f float64) int {
+	if math.Abs(f) < 0.5 {
+		return 0
+	}
+	return int(f + math.Copysign(0.5, f))
+}
+
+func optimalShards(ii IndexInfo) int {
+	proactiveSize := float64(ii.ByteSize) * 1.25
+	proactiveShardCount := round(proactiveSize / float64(GBytes))
+
+	if proactiveShardCount <= 3 {
+		return 3
+	} else {
+		return proactiveShardCount
+	}
+}
+
+func (ii *IndexInfo) CalculateShards() {
+	ii.OptimalShards = optimalShards(*ii)
 }
 
 type IndexSort []IndexInfo
