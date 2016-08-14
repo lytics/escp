@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
+	"math"
+	"math/rand"
 	"net/http"
-	"strings"
 	"sync"
+	"time"
 
 	"github.com/lytics/escp/estypes"
 )
@@ -43,7 +46,6 @@ func (i *Indexer) Err() chan error { return i.err }
 func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estypes.Doc) *Indexer {
 	indexer := &Indexer{
 		docs: docs,
-
 		// buffer an error per parallel upload buffer
 		err: make(chan error, par),
 	}
@@ -70,58 +72,45 @@ func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estyp
 		}
 
 		wg := new(sync.WaitGroup)
-		bufs := make(chan *bytes.Buffer, par)
+		batchs := make(chan *Batch, par)
 		for i := 0; i < par; i++ {
-			bufs <- bytes.NewBuffer(make([]byte, 0, bufsz))
+			batchs <- NewBatch()
 		}
-		action := BulkAction{}
-		var enc *json.Encoder
-		var buf *bytes.Buffer
 
+		var batch *Batch = nil
+		var sz = 0
 		for doc := range docs {
-			if buf == nil {
-				buf = <-bufs
-				enc = json.NewEncoder(buf)
+			if batch == nil {
+				b := <-batchs
+				b.Reset()
+				batch = b
 			}
 
-			// Write action
-			action.Index = &doc.Meta
-			action.Index.Index = index
-			if err := enc.Encode(&action); err != nil {
-				indexer.err <- err
-				return
-			}
-
-			// Write document
-			if err := enc.Encode(&doc.Source); err != nil {
-				indexer.err <- err
-				return
-			}
+			batch.Add(doc.ID, doc)
+			sz += len(doc.Source)
 
 			// Actually do the bulk insert once the buffer is full
-			if buf.Len() >= uploadat {
+			if sz >= uploadat {
 				wg.Add(1)
-				go func(b *bytes.Buffer, target string) {
+				go func(b *Batch, target string) {
 					defer wg.Done()
-					if err := upload(target, b.Bytes()); err != nil {
+					if err := upload(target, index, b); err != nil {
 						indexer.err <- err
 						return
 					}
+					batchs <- b
+				}(batch, targets[ti])
 
-					// Reset the buffer
-					b.Reset()
-					bufs <- b
-				}(buf, targets[ti])
-
-				buf = nil                    // go to next buffer in buffer pool
+				sz = 0
+				batch = nil                  // go to next buffer in buffer pool
 				ti = (ti + 1) % len(targets) // go to the next host
 			}
 		}
 
 		// No more docs, if the buffer is non-empty upload it
-		if buf != nil && buf.Len() > 0 {
+		if batch != nil && batch.Len() > 0 {
 			ti = (ti + 1) % len(targets)
-			if err := upload(targets[ti], buf.Bytes()); err != nil {
+			if err := upload(targets[ti], index, batch); err != nil {
 				indexer.err <- err
 			}
 		}
@@ -132,42 +121,54 @@ func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estyp
 }
 
 // upload buffer to bulk API.
-func upload(url string, buf []byte) error {
-	resp, err := Client.Post(url, "application/json", bytes.NewReader(buf))
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		ioutil.ReadAll(resp.Body)
-		return fmt.Errorf("esbulk: non-200 response code: %d", resp.StatusCode)
-	}
-	bresp := BulkResponse{}
-	if err := json.NewDecoder(resp.Body).Decode(&bresp); err != nil {
-		return fmt.Errorf("esbulk: error decoding response: %v", err)
-	}
-	if bresp.Errors {
-		if bresp.Items != nil {
-			items := []map[string]*BulkActionResponseItem{}
-			if err := json.Unmarshal(*bresp.Items, &items); err != nil {
-				return fmt.Errorf("esbulk: errors encountered when indexing and unable to get details: %v", err)
-			}
-			msgs := make([]string, 0, len(items))
-			ok := 0
-			for _, item := range items {
-				for action, detail := range item {
-					switch {
-					case detail.Status >= 200 && detail.Status < 300:
-						ok++
-					default:
-						msgs = append(msgs, fmt.Sprintf("%s index=%s type=%s id=%s status=%d failed: %s", action, detail.Index, detail.Type, detail.ID, detail.Status, detail.Error))
-					}
-				}
-			}
-			return fmt.Errorf("esbulk: %d errors (%d ok) encountered when indexing:\n%s", len(msgs), ok, strings.Join(msgs, "\n "))
+func upload(url, index string, batch *Batch) error {
+	for try := 0; try < 16; try++ {
+		buf, err := batch.Encode(index)
+		if err != nil {
+			return fmt.Errorf("esbulk.upload: error encoding batch: %v", err)
 		}
-		return fmt.Errorf("esbulk: errors encountered when indexing")
+		resp, err := Client.Post(url, "application/json", bytes.NewReader(buf))
+		if err != nil {
+			return fmt.Errorf("esbulk.upload: error posting to ES: %v", err)
+		}
+		defer resp.Body.Close()
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("esbulk.upload: error reading response: %v", err)
+		}
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("esbulk.upload: non-200 response code: %d", resp.StatusCode)
+		}
+		bresp := &BulkResponses{}
+		if err := json.Unmarshal(b, &bresp); err != nil {
+			return fmt.Errorf("esbulk.upload: error decoding response: %v", err)
+		}
+
+		const exclude404 = false
+		failed := bresp.Failed(exclude404)
+		if len(failed) == 0 {
+			break
+		} else if try > 10 {
+			log.Printf("retrying bulk write because of failure: %v try:%v", string(b), try)
+		}
+
+		const include404 = false
+		for _, successful := range bresp.Succeeded(include404) {
+			// remove bulk successes from next try, so we only resent the
+			// failed docs.
+			batch.Delete(successful.Id)
+		}
+
+		backoff(try)
 	}
 	return nil
+}
+
+func backoff(try int) {
+	nf := math.Pow(2, float64(try))
+	nf = math.Max(1, nf)
+	nf = math.Min(nf, 1024)
+	r := rand.Int31n(int32(nf))
+	d := time.Duration(int32(try*100)+r) * time.Millisecond
+	time.Sleep(d)
 }
