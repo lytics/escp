@@ -13,15 +13,10 @@ import (
 
 func main() {
 	var hostAddr string
-	var nodesRaw string
 	log.SetLevel(log.InfoLevel)
 
-	flag.StringVar(&nodesRaw, "nodes", "", "Nodes to find common primary shards eg: \"es1,es2,es3\"")
 	flag.StringVar(&hostAddr, "host", "http://localhost:9200/", "Elasticsearch query address")
 	flag.Parse()
-
-	log.Debugf("nodesRaw: %v", nodesRaw)
-	//nodes = strings.Split(nodesRaw, ",")
 
 	shardAddr := hostAddr + "_stats"
 	stats, err := esstats.Get(shardAddr)
@@ -57,5 +52,4 @@ func main() {
 			log.Infof("%20s: %7s  %3d:%8d", sc.Name, bytefmt.ByteSize(uint64(sc.ByteSize)), sc.ShardCount, sc.OptimalShards)
 		}
 	}
-
 }
