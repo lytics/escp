@@ -8,6 +8,7 @@ import (
 	"github.com/lytics/escp/estypes"
 )
 
+// Get and decode the response from _stats debug endpoint.
 func Get(qry string) (*estypes.Stats, error) {
 	resp, err := http.Get(qry)
 	if err != nil {

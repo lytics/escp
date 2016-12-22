@@ -43,8 +43,7 @@ func NodeIDs(endpoint estypes.SearchShardsEndpoint) map[string]map[string][]esty
 	return nodemap
 }
 
-// NodesFromHRName matches a list human-readable node names to their internal node IDs and returns the
-// internal IDs.
+// NodesFromHRName matches a list human-readable node names and returns a list of InternalIDs.
 func NodesFromHRName(endpoint estypes.SearchShardsEndpoint, esNames map[string]struct{}) map[string]string {
 	matching := make(map[string]string)
 	for k, v := range endpoint.Nodes {
