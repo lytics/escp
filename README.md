@@ -27,6 +27,11 @@ esdiff -d 4 http://host1:9200/ srcindex http://host2:9200 dstindex
 esdiff -d 1 http://host1:9200/ srcindex http://host2:9200 dstindex
 ```
 
+## Introspection tools
+
+* `primeshards` Correlates which indexes which have one or more primary shards on a subset of Elasticsearch nodes.
+* `shardsize`   Returns a list of indexes whose shards are larger than 10GB. 
+
 Other Tools
 -------------------------------
 * https://github.com/taskrabbit/elasticsearch-dump
