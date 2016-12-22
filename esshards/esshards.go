@@ -11,6 +11,8 @@ import (
 
 var ErrMissing = errors.New("Error GETting _search_shards endpoint")
 
+// Get returns structured data from the _search_shards endpoint.
+// This includes information about the cluster's nodes and flat listing of shards.
 func Get(dst string) (*estypes.SearchShardsEndpoint, error) {
 	resp, err := http.Get(dst)
 	if err != nil {
@@ -41,6 +43,8 @@ func NodeIDs(endpoint estypes.SearchShardsEndpoint) map[string]map[string][]esty
 	return nodemap
 }
 
+// NodesFromHRName matches a list human-readable node names to their internal node IDs and returns the
+// internal IDs.
 func NodesFromHRName(endpoint estypes.SearchShardsEndpoint, esNames map[string]struct{}) map[string]string {
 	matching := make(map[string]string)
 	for k, v := range endpoint.Nodes {
@@ -51,7 +55,7 @@ func NodesFromHRName(endpoint estypes.SearchShardsEndpoint, esNames map[string]s
 	return matching
 }
 
-//Given a list of ShardAttributes filter and return the Primary shards
+// PrimaryShards accepts a list of ShardAttributes filter and return the Primary shards
 func PrimaryShards(shards []estypes.ShardAttributes) []estypes.ShardAttributes {
 	primaries := make([]estypes.ShardAttributes, 0, 0)
 
@@ -63,6 +67,8 @@ func PrimaryShards(shards []estypes.ShardAttributes) []estypes.ShardAttributes {
 	return primaries
 }
 
+// FlatShardAttributes accepts a slice ShardInfo([]ShardAttributes), and
+// unpacks all of the contained ShardAttributes into a new list to return.
 func FlatShardAttributes(shardList []estypes.ShardInfo) []estypes.ShardAttributes {
 	shardAttrs := make([]estypes.ShardAttributes, 0, 0)
 	for _, si := range shardList {
@@ -73,6 +79,9 @@ func FlatShardAttributes(shardList []estypes.ShardInfo) []estypes.ShardAttribute
 	return shardAttrs
 }
 
+// ProcessShardList calculates a nested map[Node][Index][]ShardAttributes
+// which represents [NodeName][IndexName][]PrimaryShards and is returned.
+// Exposing which Nodes host an Index's Primary shard.
 func ProcessShardList(shardList []estypes.ShardAttributes, nodemap map[string]map[string][]estypes.ShardAttributes) map[string]map[string][]estypes.ShardAttributes {
 	primaries := PrimaryShards(shardList)
 
@@ -109,6 +118,8 @@ func NodeIndexSets(info estypes.SearchShardsEndpoint) map[string]map[string]stru
 	return primaryNodes
 }
 
+// CommonPrimaryIndexes builds on NodeIndexSets(...) to produce a set of Indexes common to
+// a set of Nodes.
 func CommonPrimaryIndexes(info *estypes.SearchShardsEndpoint, nodeIDs map[string]string) map[string]struct{} {
 	commonIndexes := make(map[string]struct{})
 	nodeSets := NodeIndexSets(*info)
@@ -125,6 +136,7 @@ func CommonPrimaryIndexes(info *estypes.SearchShardsEndpoint, nodeIDs map[string
 	return commonIndexes
 }
 
+// MatchMaps compares two map sets and returns the common keys
 func MatchMaps(x, y map[string]struct{}) map[string]struct{} {
 	z := make(map[string]struct{})
 

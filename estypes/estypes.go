@@ -125,10 +125,13 @@ func optimalShards(ii IndexInfo) int {
 	}
 }
 
+// CalculateShards estimates an optimal number of shards given the byte size of an index.
+// There's not much science here, just based on poorly performing index backpressure.
 func (ii *IndexInfo) CalculateShards() {
 	ii.OptimalShards = optimalShards(*ii)
 }
 
+// IndexSort defines sorting indexes by their byte size.
 type IndexSort []IndexInfo
 
 func (is IndexSort) Len() int      { return len(is) }
