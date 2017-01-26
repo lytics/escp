@@ -4,6 +4,8 @@ cmd/esshards/esshards
 cmd/primeshards/primeshards
 cmd/shardsize/shardsize
 
+vendor/**/
+
 .*.swp
 
 
