@@ -10,6 +10,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"os"
 	"sort"
 
 	log "github.com/Sirupsen/logrus"
@@ -22,6 +24,11 @@ import (
 func main() {
 	var hostAddr string
 	log.SetLevel(log.InfoLevel)
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s -host http://localhost:9200/\n", os.Args[0])
+		flag.PrintDefaults()
+	}
 
 	flag.StringVar(&hostAddr, "host", "http://localhost:9200/", "Elasticsearch query address")
 	flag.Parse()
