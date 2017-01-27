@@ -127,6 +127,9 @@ func upload(url, index string, batch *Batch) error {
 		if err != nil {
 			return fmt.Errorf("esbulk.upload: error encoding batch: %v", err)
 		}
+
+		//log.Printf("uploading:try%v bytes:%v", try, esscroll.IECFormat(uint64(len(buf))))
+
 		resp, err := Client.Post(url, "application/json", bytes.NewReader(buf))
 		if err != nil {
 			return fmt.Errorf("esbulk.upload: error posting to ES: %v", err)
@@ -144,23 +147,25 @@ func upload(url, index string, batch *Batch) error {
 			return fmt.Errorf("esbulk.upload: error decoding response: %v", err)
 		}
 
-		const exclude404 = false
-		failed := bresp.Failed(exclude404)
-		if len(failed) == 0 {
-			break
-		} else if try > 10 {
-			log.Printf("retrying bulk write because of failure: %v try:%v", string(b), try)
-		}
-
+		ct := 0
 		const include404 = false
 		for _, successful := range bresp.Succeeded(include404) {
 			// remove bulk successes from next try, so we only resent the
 			// failed docs.
 			batch.Delete(successful.Id)
+			ct++
+		}
+		if batch.Len() > 0 {
+			continue
 		}
 
 		backoff(try)
 	}
+
+	if batch.Len() > 0 {
+		log.Fatalf("error: not all docs accepted by ES:  %v remaining items", batch.Len())
+	}
+
 	return nil
 }
 

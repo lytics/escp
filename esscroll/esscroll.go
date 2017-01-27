@@ -2,6 +2,7 @@ package esscroll
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -40,7 +41,7 @@ func (r *Response) Err() error {
 //
 // When Response.Hits is closed, Response.Err() should be checked to see if the
 // scroll completed successfully or not.
-func Start(surl, timeout string, pagesz, buflen int, filter map[string]interface{}) (*Response, error) {
+func Start(surl, timeout string, pagesz, buflen int, filter map[string]interface{}, logevery time.Duration) (*Response, error) {
 	origurl, err := url.Parse(surl)
 	if err != nil {
 		return nil, err
@@ -86,12 +87,13 @@ func Start(surl, timeout string, pagesz, buflen int, filter map[string]interface
 	go func() {
 		defer close(out)
 
-		baseurl := origurl.Scheme + "://" + origurl.Host + "/_search/scroll?scroll=" + timeout + "&scroll_id="
+		ctx, can := context.WithCancel(context.Background())
+		prog := NewProgress(logevery)
+		prog.Start(ctx)
+		prog.SetDocCount(r.Total)
 
-		var done, lastdone uint64
+		baseurl := origurl.Scheme + "://" + origurl.Host + "/_search/scroll?scroll=" + timeout + "&scroll_id="
 		var blocked time.Duration
-		logdur := 10 * time.Second
-		last := time.Now()
 
 		for {
 			// Get the next page
@@ -120,10 +122,7 @@ func Start(surl, timeout string, pagesz, buflen int, filter map[string]interface
 
 			if len(result.Hits.Hits) == 0 {
 				// Completed!
-				elapsed := time.Now().Sub(last)
-				blockedpct := blocked.Seconds() / elapsed.Seconds()
-				log.Printf("%d / %d documents scrolled (%d per second; %d%% blocked)",
-					done, r.Total, lastdone/uint64(math.Max(1, elapsed.Seconds())), int(blockedpct*100))
+				can()
 				return
 			}
 
@@ -131,29 +130,104 @@ func Start(surl, timeout string, pagesz, buflen int, filter map[string]interface
 				s := time.Now()
 				out <- hit
 				blocked += time.Now().Sub(s)
+				prog.MarkBlocked(blocked)
 			}
-			done += uint64(len(result.Hits.Hits))
-			lastdone += uint64(len(result.Hits.Hits))
-
-			if time.Now().After(last.Add(logdur)) {
-				elapsed := time.Now().Sub(last)
-				blockedpct := blocked.Seconds() / elapsed.Seconds()
-				log.Printf("%d / %d documents scrolled (%d per second; %d%% blocked)",
-					done, r.Total, lastdone/uint64(math.Max(1, elapsed.Seconds())), int(blockedpct*100))
-				last = time.Now()
-				lastdone = 0
-				blocked = 0
-
-				// increase the log duration over time so we don't spam logs when no
-				// operator is even observing it
-				if logdur < 15*time.Minute {
-					logdur += 15 * time.Second
-				}
-			}
+			prog.MarkProssed(len(result.Hits.Hits))
 		}
 	}()
 
 	return &r, nil
+}
+
+//TODO move this progress to it's own package and share it with esbulk so we collect retry and error, and other metrics.
+func NewProgress(logevery time.Duration) *progress {
+	return &progress{
+		logevery: logevery,
+	}
+}
+
+type progress struct {
+	logevery time.Duration
+
+	mu             sync.Mutex
+	last           time.Time
+	processed      uint64
+	totalprocessed uint64
+	blocked        time.Duration
+	expectedDocs   uint64
+	starttime      time.Time
+}
+
+func (p *progress) SetDocCount(n uint64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.expectedDocs = uint64(n)
+}
+
+func (p *progress) MarkBlocked(blockedDur time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.blocked += blockedDur
+}
+
+func (p *progress) MarkProssed(n int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	n2 := uint64(n)
+	p.totalprocessed += n2
+	p.processed += n2
+}
+func (p *progress) Start(ctx context.Context) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.starttime = time.Now()
+
+	go func() {
+		time.AfterFunc(20*time.Second, p.log)
+		for {
+			select {
+			case <-time.After(p.logevery):
+				p.log()
+			case <-ctx.Done():
+				p.log()
+				return
+			}
+		}
+	}()
+}
+func (p *progress) log() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	elapsed := time.Now().Sub(p.last)
+	totalelapsed := time.Now().Sub(p.starttime)
+	blockedpct := p.blocked.Seconds() / elapsed.Seconds()
+	processsedSec := p.processed / uint64(math.Max(1, elapsed.Seconds()))
+	totalProcesssedSec := p.totalprocessed / uint64(math.Max(1, totalelapsed.Seconds()))
+
+	log.Printf("%d / %d documents scrolled (doc_rate:[total:%d docs/s curr:%d docs/s]; %d%% blocked)",
+		p.totalprocessed, p.expectedDocs, totalProcesssedSec, processsedSec, int(blockedpct*100))
+
+	p.last = time.Now()
+	p.processed = 0
+}
+
+//IECFormat prints bytes in the International Electro-technical Commission format
+//http://play.golang.org/p/68w_QCsE4F
+// multiples of 1024
+func IECFormat(num_in uint64) string {
+	suffix := "B" //just assume bytes
+	num := float64(num_in)
+	units := []string{"", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"}
+	for _, unit := range units {
+		if num < 1024.0 {
+			return fmt.Sprintf("%3.1f%s%s", num, unit, suffix)
+		}
+		num = (num / 1024)
+	}
+	return fmt.Sprintf("%.1f%s%s", num, "Yi", suffix)
 }
 
 //TODO Implement continuing an already started scroll

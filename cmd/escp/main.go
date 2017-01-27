@@ -38,6 +38,7 @@ func main() {
 	flag.IntVar(&scrolldocs, "scrolldocs", scrolldocs, "number of `docs` to buffer in memory from scroll")
 	bulksz := 128 * 1024
 	flag.IntVar(&bulksz, "bulksz", bulksz, "size of bulk upload buffer in `KB`")
+
 	bulkpar := 0
 	flag.IntVar(&bulkpar, "bulkpar", bulkpar, "number of parallel bulk upload buffers to use; 0 = len(hosts)*2")
 
@@ -55,7 +56,15 @@ func main() {
 	createdelay := time.Second
 	flag.DurationVar(&createdelay, "createdelay", createdelay, "time to sleep after index creation to let cluster go green")
 
+	logevery := 10 * time.Minute
+	flag.DurationVar(&logevery, "logevery", logevery, "rate at which to log progress metrics.")
+
 	flag.Parse()
+
+	if bulksz != 128*1024 {
+		bulksz = bulksz * 1024
+	}
+
 	if flag.NArg() != 3 {
 		fatalf("expected 3 arguments, found %d\n", flag.NArg())
 	}
@@ -100,7 +109,7 @@ func main() {
 	}
 
 	// Start the scroll first to make sure the source parameter is valid
-	resp, err := esscroll.Start(src+"/_search", scrolltimeout, scrollpage, scrolldocs, nil)
+	resp, err := esscroll.Start(src+"/_search", scrolltimeout, scrollpage, scrolldocs, nil, logevery)
 	if err != nil {
 		fatalf("error starting scroll: %v", err)
 	}
@@ -136,10 +145,9 @@ func main() {
 		log.Printf("error marshalling index settings. err:%v", err)
 	}
 
-	log.Printf("Copying %d documents from %s to %s/%s destination index settings: %v", resp.Total, src, flag.Arg(1), idx, string(b))
+	log.Printf("Copying %d documents from %s to %s/%s destination index settings: %v bulksize:%v", resp.Total, src, flag.Arg(1), idx, string(b), esscroll.IECFormat(uint64(bulksz)))
 
 	indexer := esbulk.NewIndexer(dsts, idx, bulksz, bulkpar, resp.Hits)
-
 	if err := <-indexer.Err(); err != nil {
 		log.Fatalf("Error indexing: %v", err)
 	}

@@ -14,17 +14,14 @@ type BulkAction struct {
 func NewBatch() *Batch {
 	return &Batch{
 		docs: make(map[string]*estypes.Doc),
-		buf:  bytes.NewBuffer(make([]byte, 0, 256000)),
 	}
 }
 
 type Batch struct {
-	buf  *bytes.Buffer
 	docs map[string]*estypes.Doc
 }
 
 func (b Batch) Reset() {
-	b.buf.Reset()
 	b.docs = make(map[string]*estypes.Doc)
 }
 
@@ -49,7 +46,8 @@ func (b Batch) ByteLen() int {
 }
 
 func (b Batch) Encode(index string) ([]byte, error) {
-	enc := json.NewEncoder(b.buf)
+	buf := bytes.NewBuffer([]byte{})
+	enc := json.NewEncoder(buf)
 	for _, doc := range b.docs {
 		// Write action
 		action := BulkAction{}
@@ -63,8 +61,7 @@ func (b Batch) Encode(index string) ([]byte, error) {
 			return nil, err
 		}
 	}
-	bs := b.buf.Bytes()
-	b.buf.Reset()
+	bs := buf.Bytes()
 	return bs, nil
 }
 
