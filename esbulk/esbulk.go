@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lytics/escp/esscroll"
 	"github.com/lytics/escp/estypes"
 )
 
@@ -132,7 +131,7 @@ func upload(url, index string, batch *Batch) error {
 			return fmt.Errorf("esbulk.upload: error encoding batch: %v", err)
 		}
 
-		log.Printf("uploading:try%v bytes:%v batchlen:%v", try, esscroll.IECFormat(uint64(len(buf))), batch.Len())
+		//log.Printf("uploading:try%v bytes:%v batchlen:%v", try, esscroll.IECFormat(uint64(len(buf))), batch.Len())
 
 		resp, err := Client.Post(url, "application/json", bytes.NewReader(buf))
 		if err != nil {
@@ -167,7 +166,7 @@ func upload(url, index string, batch *Batch) error {
 	}
 
 	if batch.Len() > 0 {
-		log.Fatalf("error: not all docs accepted by ES:  %v remaining items", batch.Len())
+		log.Fatalf("error: unable to write all docs to ES for this batch: %v remaining items", batch.Len())
 	}
 	batch.Reset()
 

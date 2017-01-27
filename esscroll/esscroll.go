@@ -212,6 +212,7 @@ func (p *progress) log() {
 
 	p.last = time.Now()
 	p.processed = 0
+	p.blocked = 0
 }
 
 //IECFormat prints bytes in the International Electro-technical Commission format
