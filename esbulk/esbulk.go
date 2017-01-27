@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lytics/escp/esscroll"
 	"github.com/lytics/escp/estypes"
 )
 
@@ -94,6 +95,9 @@ func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estyp
 				wg.Add(1)
 				go func(b *Batch, target string) {
 					defer wg.Done()
+					if b.Len() == 0 {
+						return
+					}
 					if err := upload(target, index, b); err != nil {
 						indexer.err <- err
 						return
@@ -128,7 +132,7 @@ func upload(url, index string, batch *Batch) error {
 			return fmt.Errorf("esbulk.upload: error encoding batch: %v", err)
 		}
 
-		//log.Printf("uploading:try%v bytes:%v", try, esscroll.IECFormat(uint64(len(buf))))
+		log.Printf("uploading:try%v bytes:%v batchlen:%v", try, esscroll.IECFormat(uint64(len(buf))), batch.Len())
 
 		resp, err := Client.Post(url, "application/json", bytes.NewReader(buf))
 		if err != nil {
@@ -155,8 +159,8 @@ func upload(url, index string, batch *Batch) error {
 			batch.Delete(successful.Id)
 			ct++
 		}
-		if batch.Len() > 0 {
-			continue
+		if batch.Len() == 0 {
+			break
 		}
 
 		backoff(try)
@@ -165,6 +169,7 @@ func upload(url, index string, batch *Batch) error {
 	if batch.Len() > 0 {
 		log.Fatalf("error: not all docs accepted by ES:  %v remaining items", batch.Len())
 	}
+	batch.Reset()
 
 	return nil
 }
