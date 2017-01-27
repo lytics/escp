@@ -153,7 +153,8 @@ type progress struct {
 	last           time.Time
 	processed      uint64
 	totalprocessed uint64
-	blocked        time.Duration
+	blockedtotal   time.Duration
+	blockedcnt     int
 	expectedDocs   uint64
 	starttime      time.Time
 }
@@ -167,8 +168,8 @@ func (p *progress) SetDocCount(n uint64) {
 func (p *progress) MarkBlocked(blockedDur time.Duration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
-	p.blocked += blockedDur
+	p.blockedcnt += 1
+	p.blockedtotal += blockedDur
 }
 
 func (p *progress) MarkProssed(n int) {
@@ -183,6 +184,7 @@ func (p *progress) Start(ctx context.Context) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.starttime = time.Now()
+	p.last = time.Now()
 
 	go func() {
 		time.AfterFunc(20*time.Second, p.log)
@@ -203,16 +205,15 @@ func (p *progress) log() {
 
 	elapsed := time.Now().Sub(p.last)
 	totalelapsed := time.Now().Sub(p.starttime)
-	blockedpct := p.blocked.Seconds() / elapsed.Seconds()
+	avetimeWaintToSend := time.Duration(int64(p.blockedtotal) / int64(p.blockedcnt))
 	processsedSec := p.processed / uint64(math.Max(1, elapsed.Seconds()))
 	totalProcesssedSec := p.totalprocessed / uint64(math.Max(1, totalelapsed.Seconds()))
 
-	log.Printf("%d / %d documents scrolled (doc_rate:[total:%d docs/s curr:%d docs/s]; %d%% blocked)",
-		p.totalprocessed, p.expectedDocs, totalProcesssedSec, processsedSec, int(blockedpct*100))
+	log.Printf("%d / %d documents scrolled (doc_rate:[total:%d docs/s curr:%d docs/s]) (average chan send time:%v)",
+		p.totalprocessed, p.expectedDocs, totalProcesssedSec, processsedSec, avetimeWaintToSend)
 
 	p.last = time.Now()
 	p.processed = 0
-	p.blocked = 0
 }
 
 //IECFormat prints bytes in the International Electro-technical Commission format
