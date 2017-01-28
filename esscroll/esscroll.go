@@ -199,9 +199,11 @@ func (p *progress) Start(ctx context.Context) {
 	p.last = time.Now()
 
 	go func() {
-		time.AfterFunc(20*time.Second, p.log)
+
 		for {
 			select {
+			case <-time.After(20 * time.Second):
+				p.log()
 			case <-time.After(p.logevery):
 				p.log()
 			case <-ctx.Done():
@@ -217,7 +219,7 @@ func (p *progress) log() {
 
 	elapsed := time.Now().Sub(p.last)
 	totalelapsed := time.Now().Sub(p.starttime)
-	avetimeWaintToSend := time.Duration(int64(p.blockedtotal) / int64(p.blockedcnt))
+	avetimeWaintToSend := time.Duration(int64(p.blockedtotal) / int64(max(1, p.blockedcnt)))
 	processsedSec := p.processed / uint64(math.Max(1, elapsed.Seconds()))
 	totalProcesssedSec := p.totalprocessed / uint64(math.Max(1, totalelapsed.Seconds()))
 
@@ -246,3 +248,10 @@ func IECFormat(num_in uint64) string {
 
 //TODO Implement continuing an already started scroll
 //func Continue(url, scrollID string) {}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
