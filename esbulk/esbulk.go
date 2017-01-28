@@ -131,6 +131,11 @@ func upload(url, index string, batch *Batch) error {
 		if err != nil {
 			return fmt.Errorf("esbulk.upload: error encoding batch: %v", err)
 		}
+		if len(buf) == 0 {
+			log.Printf("length of buffer to write is 0, skipping")
+			time.Sleep(1 * time.Second)
+			continue
+		}
 
 		if try > 10 {
 			log.Printf("slow upload warning: retry:%v bytes:%v batchlen:%v", try, esscroll.IECFormat(uint64(len(buf))), batch.Len())
@@ -138,9 +143,14 @@ func upload(url, index string, batch *Batch) error {
 
 		resp, err := Client.Post(url, "application/json", bytes.NewReader(buf))
 		if err != nil {
-			return fmt.Errorf("esbulk.upload: error posting to ES: %v", err)
+			log.Printf("esbulk.upload: error posting to ES: %v, bytes len: %d", err, len(buf))
+			backoff(try)
+			continue
 		}
-		defer resp.Body.Close()
+		if resp != nil {
+			defer resp.Body.Close()
+		}
+
 		b, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("esbulk.upload: error reading response: %v", err)
@@ -152,6 +162,7 @@ func upload(url, index string, batch *Batch) error {
 		if err := json.Unmarshal(b, &bresp); err != nil {
 			return fmt.Errorf("esbulk.upload: error decoding response: %v", err)
 		}
+		//log.Printf("BulkResponse successes: %d\n", len(bresp.Items))
 
 		ct := 0
 		const include404 = false
