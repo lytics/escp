@@ -29,6 +29,9 @@ func main() {
 	flag.IntVar(&denom, "d", denom, "1/`N` chance of each document being checked")
 	force := false
 	flag.BoolVar(&force, "force", force, "continue check even if document count varies")
+	logevery := 10 * time.Minute
+	flag.DurationVar(&logevery, "logevery", logevery, "rate at which to log progress metrics.")
+
 	flag.Parse()
 	if flag.NArg() != 2 {
 		fatalf("requires 2 arguments")
@@ -45,7 +48,7 @@ func main() {
 	}
 	dice := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	resp, err := esscroll.Start(src, timeout, pagesz, 0, nil)
+	resp, err := esscroll.Start(src, timeout, pagesz, 0, nil, logevery)
 	if err != nil {
 		fatalf("error starting scroll: %v", err)
 	}
