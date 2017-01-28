@@ -199,10 +199,10 @@ func (p *progress) Start(ctx context.Context) {
 	p.last = time.Now()
 
 	go func() {
-
+		frsLog := time.After(20 * time.Second)
 		for {
 			select {
-			case <-time.After(20 * time.Second):
+			case <-frsLog:
 				p.log()
 			case <-time.After(p.logevery):
 				p.log()
