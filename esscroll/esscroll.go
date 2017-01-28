@@ -92,8 +92,21 @@ func Start(surl, timeout string, pagesz, buflen int, filter map[string]interface
 		prog.Start(ctx)
 		prog.SetDocCount(r.Total)
 
+		docspages := make(chan []*estypes.Doc, 2)
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		go func(wg *sync.WaitGroup, docspages chan []*estypes.Doc) {
+			defer wg.Done()
+			for hits := range docspages {
+				for _, hit := range hits {
+					s := time.Now()
+					out <- hit
+					prog.MarkBlocked(time.Now().Sub(s))
+				}
+			}
+		}(wg, docspages)
+
 		baseurl := origurl.Scheme + "://" + origurl.Host + "/_search/scroll?scroll=" + timeout + "&scroll_id="
-		var blocked time.Duration
 
 		for {
 			// Get the next page
@@ -123,15 +136,14 @@ func Start(surl, timeout string, pagesz, buflen int, filter map[string]interface
 			if len(result.Hits.Hits) == 0 {
 				// Completed!
 				can()
+				close(docspages)
+				wg.Wait()
 				return
 			}
 
-			for _, hit := range result.Hits.Hits {
-				s := time.Now()
-				out <- hit
-				blocked += time.Now().Sub(s)
-				prog.MarkBlocked(blocked)
-			}
+			hits := result.Hits.Hits
+			docspages <- hits
+
 			prog.MarkProssed(len(result.Hits.Hits))
 		}
 	}()
