@@ -117,6 +117,9 @@ func Copy(ctx context.Context, src *SourceConfig, des *DesConfig, logger log.Log
 	// Create the destination index unless explicitly told not to
 	if !des.SkipCreate {
 		logger.Infof("Creating index %s with shards=%d refresh_interval=%s delay-refresh=%t", des.IndexName, des.Shards, refreshint, des.DelayRefresh)
+		if des.Shards == 0 {
+			des.Shards = *idxmeta.Settings.Index.Shards
+		}
 		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{
 			Shards:          &des.Shards,
 			RefreshInterval: refreshint,
