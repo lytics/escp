@@ -1,25 +1,24 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/lytics/escp/esbulk"
-	"github.com/lytics/escp/esindex"
-	"github.com/lytics/escp/esscroll"
+	"net/url"
+
+	"github.com/lytics/escp/jobs"
+	log "github.com/lytics/escp/logging"
 )
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
-	log.SetOutput(os.Stderr)
+	logger := log.NewStdLogger(true, log.DEBUG, "")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage of %s http://SRCHOST1:9200/INDEX1 DESHOST2:9200,DESHOST3:9200,DESHOST4:9200 INDEX2\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage of %s http://SRCHOST1:9200 INDEX1 DESHOST2:9200,DESHOST3:9200,DESHOST4:9200 INDEX2\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 
@@ -30,8 +29,8 @@ func main() {
 	flag.BoolVar(&skipcreate, "skipcreate", skipcreate, "skip destination index creation")
 
 	// Tunables
-	scrolltimeout := "15m"
-	flag.StringVar(&scrolltimeout, "scrolltime", scrolltimeout, "time to keep scroll alive between requests")
+	scrolltimeout := 15 * time.Minute
+	flag.DurationVar(&scrolltimeout, "scrolltime", scrolltimeout, "time to keep scroll alive between requests")
 	scrollpage := 1000
 	flag.IntVar(&scrollpage, "scrollpage", scrollpage, "size of scroll pages (will actually be per source shard)")
 	scrolldocs := 5000
@@ -49,8 +48,8 @@ func main() {
 	replicationfactor := 1
 	flag.IntVar(&replicationfactor, "replicationfactor", replicationfactor, "if delayreplication is set the replicaiton setting will be set to this after coping.")
 
-	refreshint := ""
-	flag.StringVar(&refreshint, "refreshint", refreshint, "if indexing is delayed, what to set the refresh interval to after copy; defaults to old index's setting or 1s")
+	refreshint := time.Duration(0)
+	flag.DurationVar(&refreshint, "refreshint", refreshint, "if indexing is delayed, what to set the refresh interval to after copy; defaults to old index's setting or 1s")
 	maxsegs := 5
 	flag.IntVar(&maxsegs, "maxsegs", maxsegs, "if indexing is delayed, the max number of segments for the optimized index")
 	createdelay := time.Second
@@ -65,135 +64,74 @@ func main() {
 		bulksz = bulksz * 1024
 	}
 
-	if flag.NArg() != 3 {
-		fatalf("expected 3 arguments, found %d\n", flag.NArg())
+	if flag.NArg() != 4 {
+		logger.Errorf("expected 3 arguments, found %d\n", flag.NArg())
+		flag.Usage()
+		os.Exit(1)
 	}
 	if shards > 0 && skipcreate {
-		fatalf("cannot set shards and skip index creation")
+		logger.Errorf("cannot set shards and skip index creation")
+		flag.Usage()
+		os.Exit(1)
 	}
 
-	src := flag.Arg(0)
-	if strings.HasSuffix(src, "/") {
-		src = src[:len(src)-1]
+	src, err := jobs.ParseUrl(flag.Arg(0))
+	if err != nil {
+		logger.Errorf("error parsing url:%v err:%v", flag.Arg(0), err)
+		os.Exit(1)
 	}
-	dsts := strings.Split(flag.Arg(1), ",")
-	if len(dsts) < 1 {
-		fatalf("need at least one destination host")
+	srcIdx := flag.Arg(1)
+	if strings.HasSuffix(srcIdx, "/") {
+		srcIdx = srcIdx[:len(srcIdx)-1]
 	}
+
+	dstsR := strings.Split(flag.Arg(2), ",")
+	if len(dstsR) < 1 {
+		logger.Errorf("need at least one destination host")
+		flag.Usage()
+		os.Exit(1)
+	}
+	dsts := []*url.URL{}
+	for _, u := range dstsR {
+		d, err := jobs.ParseUrl(u)
+		if err != nil {
+			logger.Errorf("error parsing url:%v err:%v", u, err)
+			os.Exit(1)
+		}
+		dsts = append(dsts, d)
+	}
+	desidx := flag.Arg(3)
+
 	if bulkpar == 0 {
 		bulkpar = len(dsts) * 2
 	}
-	idx := flag.Arg(2)
 
-	// Use the first destination host as the "primary"
-	pridst := fmt.Sprintf("http://%s/%s", dsts[0], idx)
-
-	idxmeta, err := esindex.Get(src)
-	if err != nil {
-		fatalf("failed getting source index metadata: %v", err)
+	srcC := &jobs.SourceConfig{
+		IndexName:     srcIdx,
+		Host:          src,
+		ScrollTimeout: scrolltimeout,
+		ScrollPage:    scrollpage,
+		ScrollDocs:    scrolldocs,
+		Filter:        nil,
+	}
+	desC := &jobs.DesConfig{
+		IndexName:         desidx,
+		Hosts:             dsts,
+		CreateDelay:       createdelay,
+		RefreshInt:        refreshint,
+		Shards:            shards,
+		DelayRefresh:      delayrefresh,
+		SkipCreate:        skipcreate,
+		DelayReplicaton:   delayreplicaton,
+		ReplicationFactor: replicationfactor,
+		MaxSeg:            maxsegs,
+		BulkSize:          bulksz,
+		NumWorkers:        bulkpar,
 	}
 
-	// Copy over shards setting if it wasn't explicitly set
-	if shards == 0 {
-		shards = *idxmeta.Settings.Index.Shards
+	if err := jobs.Copy(context.Background(), srcC, desC, logger, logevery); err != nil {
+		logger.Errorf("%v", err)
+		os.Exit(1)
 	}
 
-	// Copy over refreshint if it wasn't set in options but was set on the source
-	// index
-	if refreshint == "" {
-		if idxmeta.Settings.Index.RefreshInterval != "" {
-			refreshint = idxmeta.Settings.Index.RefreshInterval
-		} else {
-			refreshint = "1s" // default
-		}
-	}
-
-	// Start the scroll first to make sure the source parameter is valid
-	resp, err := esscroll.Start(src+"/_search", scrolltimeout, scrollpage, scrolldocs, nil, logevery)
-	if err != nil {
-		fatalf("error starting scroll: %v", err)
-	}
-
-	// Create the destination index unless explicitly told not to
-	if !skipcreate {
-		log.Printf("Creating index %s with shards=%d refresh_interval=%s delay-refresh=%t", idx, shards, refreshint, delayrefresh)
-		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{
-			Shards:          &shards,
-			RefreshInterval: refreshint,
-		}}}
-		if delayrefresh {
-			// Disable refreshing until end
-			m.Settings.Index.RefreshInterval = "-1"
-		}
-		if delayreplicaton {
-			i := 0
-			m.Settings.Index.Replicas = &i
-		}
-		if err := esindex.Create(pridst, &m); err != nil {
-			fatalf("failed creating index: %v", err)
-		}
-
-		time.Sleep(createdelay)
-	}
-
-	desmeta, err := esindex.Get(pridst)
-	if err != nil {
-		log.Printf("error loading destination index settings. err:%v", err)
-	}
-	b, err := json.Marshal(desmeta)
-	if err != nil {
-		log.Printf("error marshalling index settings. err:%v", err)
-	}
-
-	log.Printf("Copying %d documents from %s to %s/%s destination index settings: %v bulksize:%v", resp.Total, src, flag.Arg(1), idx, string(b), esscroll.IECFormat(uint64(bulksz)))
-
-	indexer := esbulk.NewIndexer(dsts, idx, bulksz, bulkpar, resp.Hits)
-	if err := <-indexer.Err(); err != nil {
-		log.Fatalf("Error indexing: %v", err)
-	}
-
-	if err := resp.Err(); err != nil {
-		log.Fatalf("Error searching: %v", err)
-	}
-
-	if delayrefresh {
-		log.Printf("Copy completed. Refreshing index. This may take some time.")
-		if err := esindex.Optimize(pridst, maxsegs); err != nil {
-			log.Printf("Error optimizing: %v", err)
-			log.Fatalf("Copy completed successfully. Optimize and reenable refreshing manually.")
-		}
-		log.Printf("Optimize completed. Setting refresh interval to %s", refreshint)
-
-		// update refresh setting
-		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{RefreshInterval: refreshint}}}
-		if err := esindex.Update(pridst, &m); err != nil {
-			log.Printf("Error enabling refreshing: %v", err)
-			log.Fatalf("Copy completed successfully. Reenable refreshing manually.")
-		}
-	}
-
-	if delayreplicaton {
-		// update refresh setting
-		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{Replicas: &replicationfactor}}}
-		if err := esindex.Update(pridst, &m); err != nil {
-			log.Printf("Error enabling replicas[%v]: %v", replicationfactor, err)
-			log.Fatalf("Copy completed successfully. Reenable refreshing manually.")
-		}
-	}
-
-	desmeta, err = esindex.Get(pridst)
-	if err != nil {
-		log.Printf("error loading destination index settings. err:%v", err)
-	}
-	b, err = json.Marshal(desmeta)
-	if err != nil {
-		log.Printf("error marshalling index settings. err:%v", err)
-	}
-	log.Printf("Completed: destination index settngs: %v", string(b))
-}
-
-func fatalf(msg string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "fatal error: "+msg+"\n", args...)
-	flag.Usage()
-	os.Exit(2)
 }

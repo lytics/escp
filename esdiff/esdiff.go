@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"reflect"
 
 	"github.com/lytics/escp/estypes"
+	log "github.com/lytics/escp/logging"
 )
 
 const (
@@ -38,7 +38,7 @@ func (e *ErrHTTP) Error() string {
 //
 // Errors from Elasticsearch or JSON unmarshalling are returned untouched
 // with an empty diff string.
-func Check(src *estypes.Doc, dst string) (diff string, err error) {
+func Check(src *estypes.Doc, dst string, logger log.Logger) (diff string, err error) {
 	// Get the document from the target index
 	target := fmt.Sprintf("%s/%s/%s", dst, src.Type, src.ID)
 	resp, err := http.Get(target)
@@ -63,7 +63,7 @@ func Check(src *estypes.Doc, dst string) (diff string, err error) {
 
 	newdoc := estypes.Doc{}
 	if err := json.NewDecoder(resp.Body).Decode(&newdoc); err != nil {
-		log.Printf("ERROR %s -- %v", target, err)
+		logger.Errorf("unable to unmarshal json body: Url:%s Err:%v", target, err)
 		ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 		return "", fmt.Errorf("error decoding destination document: %v", err)

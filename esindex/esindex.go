@@ -51,7 +51,7 @@ func Create(dst string, m *Meta) error {
 func Get(dst string) (*Meta, error) {
 	resp, err := http.Get(dst)
 	if err != nil {
-		return nil, fmt.Errorf("error contacting source Elasticsearch: %v", err)
+		return nil, fmt.Errorf("error GET:%v err:%v", dst, err)
 	}
 	if resp.StatusCode == 404 {
 		return nil, ErrMissing
@@ -76,6 +76,18 @@ func Get(dst string) (*Meta, error) {
 		return nil, fmt.Errorf("unable to read existing shards for index %s", idxname)
 	}
 	return idxmeta, nil
+}
+
+func GetDocCount(idx string) (uint64, error) {
+	hresp, err := http.Get(idx + "/_search?size=0")
+	if err != nil {
+		return 0, fmt.Errorf("error contacting index:%v err:%v", idx, err)
+	}
+	newres := estypes.Results{}
+	if err := json.NewDecoder(hresp.Body).Decode(&newres); err != nil {
+		return 0, fmt.Errorf("error reading target index:%v err:%v", idx, err)
+	}
+	return newres.Hits.Total, nil
 }
 
 // Update index metadata
