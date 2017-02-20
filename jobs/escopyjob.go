@@ -160,6 +160,12 @@ func Copy(ctx context.Context, src *SourceConfig, des *DesConfig, logger log.Log
 		logger.Errorf("Error searching: %v", err)
 	}
 
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
 	if des.DelayRefresh {
 		logger.Infof("Copy completed. Refreshing index. This may take some time.")
 		if err := esindex.Optimize(priDesUrl, des.MaxSeg); err != nil {

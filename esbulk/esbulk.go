@@ -99,7 +99,7 @@ func New(ctx context.Context, hosts []string, index string, bufsz, par int, docs
 					if b.Len() == 0 {
 						return
 					}
-					if err := upload(target, index, b, logger); err != nil {
+					if err := upload(ctx, target, index, b, logger); err != nil {
 						indexer.err <- err
 						return
 					}
@@ -121,7 +121,7 @@ func New(ctx context.Context, hosts []string, index string, bufsz, par int, docs
 		// No more docs, if the buffer is non-empty upload it
 		if batch != nil && batch.Len() > 0 {
 			ti = (ti + 1) % len(targets)
-			if err := upload(targets[ti], index, batch, logger); err != nil {
+			if err := upload(ctx, targets[ti], index, batch, logger); err != nil {
 				indexer.err <- err
 			}
 		}
@@ -132,8 +132,14 @@ func New(ctx context.Context, hosts []string, index string, bufsz, par int, docs
 }
 
 // upload buffer to bulk API.
-func upload(url, index string, batch *Batch, logger log.Logger) error {
-	for try := 0; try < 16; try++ {
+func upload(ctx context.Context, url, index string, batch *Batch, logger log.Logger) error {
+	st := time.Now()
+	for try := 0; try < 64; try++ {
+		select {
+		case <-ctx.Done():
+		default:
+		}
+
 		buf, err := batch.Encode(index)
 		if err != nil {
 			return fmt.Errorf("esbulk.upload: error encoding batch: %v", err)
@@ -145,7 +151,7 @@ func upload(url, index string, batch *Batch, logger log.Logger) error {
 		}
 
 		if try > 10 {
-			logger.Warnf("slow upload warning: retry:%v bytes:%v batchlen:%v", try, esscroll.IECFormat(uint64(len(buf))), batch.Len())
+			logger.Warnf("slow upload warning: retry:%v of %v bytes:%v batchlen:%v runtime:%v", try, 64, esscroll.IECFormat(uint64(len(buf))), batch.Len(), time.Since(st))
 		}
 
 		resp, err := Client.Post(url, "application/json", bytes.NewReader(buf))
@@ -197,7 +203,13 @@ func upload(url, index string, batch *Batch, logger log.Logger) error {
 func backoff(try int) {
 	nf := math.Pow(2, float64(try))
 	nf = math.Max(1, nf)
-	nf = math.Min(nf, 1024)
+	if try < 3 {
+		nf = math.Min(nf, 2000)
+	} else if try > 10 {
+		nf = math.Min(nf, 8000)
+	} else {
+		nf = math.Min(nf, 4000)
+	}
 	r := rand.Int31n(int32(nf))
 	d := time.Duration(int32(try*100)+r) * time.Millisecond
 	time.Sleep(d)

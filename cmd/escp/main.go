@@ -35,7 +35,7 @@ func main() {
 	flag.IntVar(&scrollpage, "scrollpage", scrollpage, "size of scroll pages (will actually be per source shard)")
 	scrolldocs := 5000
 	flag.IntVar(&scrolldocs, "scrolldocs", scrolldocs, "number of `docs` to buffer in memory from scroll")
-	bulksz := 128 * 1024
+	bulksz := 128
 	flag.IntVar(&bulksz, "bulksz", bulksz, "size of bulk upload buffer in `KB`")
 
 	bulkpar := 0
@@ -60,12 +60,10 @@ func main() {
 
 	flag.Parse()
 
-	if bulksz != 128*1024 {
-		bulksz = bulksz * 1024
-	}
+	bulksz = bulksz * 1024 //convert to KBs
 
 	if flag.NArg() != 4 {
-		logger.Errorf("expected 3 arguments, found %d\n", flag.NArg())
+		logger.Errorf("expected 4 arguments, found %d\n", flag.NArg())
 		flag.Usage()
 		os.Exit(1)
 	}
