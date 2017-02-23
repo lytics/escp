@@ -11,10 +11,12 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	log "github.com/lytics/escp/logging"
 )
 
 func fatalf(msg string, args ...interface{}) {
-	fmt.Printf(msg, args...)
+	fmt.Printf(msg+"\n", args...)
 	os.Exit(2)
 }
 
@@ -56,9 +58,13 @@ func main() {
 	flag.BoolVar(&useSource, "source", useSource, "use _source field to output result")
 	flag.BoolVar(&showID, "id", showID, "show _id field")
 
-	logger := log.NewStdLogger(true, log.DEBUG, "")
-
 	flag.Parse()
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage of %s  --host=localhost:9401\n", os.Args[0])
+		flag.PrintDefaults()
+	}
+
+	logger := log.NewStdLogger(true, log.DEBUG, "")
 
 	// If no message field is explicitly requested we will follow @message
 	if len(msgFields) == 0 {
@@ -95,10 +101,16 @@ func main() {
 			fatalf("Error contacting Elasticsearch %s: %v", host, err)
 		}
 		status := map[string]interface{}{}
-		if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-			fatalf("Error decoding _status response from Elasticsearch: %v", err)
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			fatalf("unable to read response body err:%v", err)
 		}
 		resp.Body.Close()
+		if err := json.Unmarshal(body, &status); err != nil {
+			fatalf("Error decoding _status response from Elasticsearch: err:%v json:%v", err, string(body))
+		}
+
+		logger.Debugf("idx resp: %v", string(body))
 
 		indices := []string{}
 		for k, _ := range status["indices"].(map[string]interface{}) {
