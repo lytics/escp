@@ -73,7 +73,7 @@ func main() {
 	timeRangeFilter := map[string]interface{}{
 		"range": map[string]interface{}{
 			timeField: map[string]interface{}{
-				"gt": time.Now().Add(-1 * timeSpan).Format(time.RFC3339Nano),
+				"gt": time.Now().Add(-1 * timeSpan).UTC().Format(time.RFC3339Nano),
 			},
 		},
 	}
