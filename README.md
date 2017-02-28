@@ -13,18 +13,18 @@ go get -v github.com/lytics/escp/...
 
 ```sh
 # Copy srcindex on host1 to dstindex on host2,host3
-escp http://host1:9200/srcindex host2:9200,host3:9200 dstindex
+escp http://host1:9200/ srcindex host2:9200,host3:9200 dstindex
 ```
 
 ```sh
 # Check document counts are equal and spot check documents
-esdiff http://host1:9200/srcindex/_search http://host2:9200/dstindex
+esdiff http://host1:9200/ srcindex http://host2:9200/dstindex
 
 # Check 25% of documents
-esdiff -d 4 http://host1:9200/srcindex/_search http://host2:9200/dstindex
+esdiff -d 4 http://host1:9200/ srcindex http://host2:9200 dstindex
 
 # Check all documents
-esdiff -d 1 http://host1:9200/srcindex/_search http://host2:9200/dstindex
+esdiff -d 1 http://host1:9200/ srcindex http://host2:9200 dstindex
 ```
 
 Other Tools
