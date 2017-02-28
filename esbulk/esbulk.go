@@ -2,11 +2,11 @@ package esbulk
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math"
 	"math/rand"
 	"net/http"
@@ -15,6 +15,7 @@ import (
 
 	"github.com/lytics/escp/esscroll"
 	"github.com/lytics/escp/estypes"
+	log "github.com/lytics/escp/logging"
 )
 
 var Client = http.DefaultClient
@@ -34,7 +35,7 @@ type Indexer struct {
 // closed when indexing is finished.
 func (i *Indexer) Err() chan error { return i.err }
 
-// NewIndexer creates a new Elasticsearch bulk indexer. URL should be of the
+// New creates a new Elasticsearch bulk indexer. URL should be of the
 // form http://eshost:9200/_bulk.
 //
 // bufsz is the size of the upload buffer in kilobytes. bufsz < 1 will default
@@ -44,7 +45,7 @@ func (i *Indexer) Err() chan error { return i.err }
 //
 // Sends to docs should select on Indexer.Err to prevent deadlocking in case of
 // indexer error.
-func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estypes.Doc) *Indexer {
+func New(ctx context.Context, hosts []string, index string, bufsz, par int, docs <-chan *estypes.Doc, logger log.Logger) *Indexer {
 	indexer := &Indexer{
 		docs: docs,
 		// buffer an error per parallel upload buffer
@@ -59,7 +60,7 @@ func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estyp
 	}
 	targets := make([]string, len(hosts))
 	for i, h := range hosts {
-		targets[i] = fmt.Sprintf("http://%s/_bulk", h)
+		targets[i] = fmt.Sprintf("%s/_bulk", h)
 	}
 	ti := 0
 
@@ -98,7 +99,7 @@ func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estyp
 					if b.Len() == 0 {
 						return
 					}
-					if err := upload(target, index, b); err != nil {
+					if err := upload(ctx, target, index, b, logger); err != nil {
 						indexer.err <- err
 						return
 					}
@@ -109,12 +110,18 @@ func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estyp
 				batch = nil                  // go to next buffer in buffer pool
 				ti = (ti + 1) % len(targets) // go to the next host
 			}
+			select {
+			case <-ctx.Done():
+				//TODO Save prgress
+				return
+			default:
+			}
 		}
 
 		// No more docs, if the buffer is non-empty upload it
 		if batch != nil && batch.Len() > 0 {
 			ti = (ti + 1) % len(targets)
-			if err := upload(targets[ti], index, batch); err != nil {
+			if err := upload(ctx, targets[ti], index, batch, logger); err != nil {
 				indexer.err <- err
 			}
 		}
@@ -125,25 +132,31 @@ func NewIndexer(hosts []string, index string, bufsz, par int, docs <-chan *estyp
 }
 
 // upload buffer to bulk API.
-func upload(url, index string, batch *Batch) error {
-	for try := 0; try < 16; try++ {
+func upload(ctx context.Context, url, index string, batch *Batch, logger log.Logger) error {
+	st := time.Now()
+	for try := 0; try < 64; try++ {
+		select {
+		case <-ctx.Done():
+		default:
+		}
+
 		buf, err := batch.Encode(index)
 		if err != nil {
 			return fmt.Errorf("esbulk.upload: error encoding batch: %v", err)
 		}
 		if len(buf) == 0 {
-			log.Printf("length of buffer to write is 0, skipping")
+			logger.Infof("length of buffer to write is 0, skipping")
 			time.Sleep(1 * time.Second)
 			continue
 		}
 
 		if try > 10 {
-			log.Printf("slow upload warning: retry:%v bytes:%v batchlen:%v", try, esscroll.IECFormat(uint64(len(buf))), batch.Len())
+			logger.Warnf("slow upload warning: retry:%v of %v bytes:%v batchlen:%v runtime:%v", try, 64, esscroll.IECFormat(uint64(len(buf))), batch.Len(), time.Since(st))
 		}
 
 		resp, err := Client.Post(url, "application/json", bytes.NewReader(buf))
 		if err != nil {
-			log.Printf("esbulk.upload: error posting to ES: %v, bytes len: %d", err, len(buf))
+			logger.Warnf("esbulk.upload: error posting to ES: %v, bytes len: %d", err, len(buf))
 			backoff(try)
 			continue
 		}
@@ -180,7 +193,7 @@ func upload(url, index string, batch *Batch) error {
 	}
 
 	if batch.Len() > 0 {
-		log.Fatalf("error: unable to write all docs to ES for this batch: %v remaining items", batch.Len())
+		logger.Errorf("error: unable to write all docs to ES for this batch: %v remaining items", batch.Len())
 	}
 	batch.Reset()
 
@@ -190,7 +203,13 @@ func upload(url, index string, batch *Batch) error {
 func backoff(try int) {
 	nf := math.Pow(2, float64(try))
 	nf = math.Max(1, nf)
-	nf = math.Min(nf, 1024)
+	if try < 3 {
+		nf = math.Min(nf, 2000)
+	} else if try > 10 {
+		nf = math.Min(nf, 8000)
+	} else {
+		nf = math.Min(nf, 4000)
+	}
 	r := rand.Int31n(int32(nf))
 	d := time.Duration(int32(try*100)+r) * time.Millisecond
 	time.Sleep(d)
