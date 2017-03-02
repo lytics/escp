@@ -1,6 +1,12 @@
 # estail
 
-estail is tailing tool for Elasticsearch
+Moved from https://github.com/lytics/estail (this old version only supported older versions of ES)
+
+estail is tailing tool for Elasticsearch indexes.  The main usecase is for tailing timeseries data stored in mutiple indexes (one per bucket of time).  
+
+Work in Progress! 
+
+It currently works well for tailing data but doesn't suppore a `tail -f` style streaming of realtime changes.
 
 ## Install
 
