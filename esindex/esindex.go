@@ -22,9 +22,29 @@ type Settings struct {
 }
 
 type IndexSettings struct {
-	Replicas        *int   `json:"number_of_replicas,string,omitempty"`
-	Shards          *int   `json:"number_of_shards,string,omitempty"`
-	RefreshInterval string `json:"refresh_interval,omitempty"`
+	Replicas        *int              `json:"number_of_replicas,string,omitempty"`
+	Shards          *int              `json:"number_of_shards,string,omitempty"`
+	RefreshInterval string            `json:"refresh_interval,omitempty"`
+	CompoundOnFlush bool              `json:"compound_on_flush,omitempty"`
+	CompoundFormat  bool              `json:"compound_format,omitempty"`
+	Mapping         *IndexMapping     `json:"mapping,omitempty"`
+	Unassigned      *UnassignedWarper `json:"unassigned,omitempty"`
+}
+
+type IndexMapping struct {
+	NestedFields *FieldsSetting `json:"nested_fields,omitempty"`
+}
+
+type FieldsSetting struct {
+	Limit int `json:"limit,omitempty"`
+}
+
+type UnassignedWarper struct {
+	NodeOption *NodeOptions `json:"node_left,omitempty"`
+}
+
+type NodeOptions struct {
+	DelayTimeout string `json:"delayed_timeout,omitempty"`
 }
 
 var (

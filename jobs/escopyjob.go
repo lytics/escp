@@ -120,10 +120,22 @@ func Copy(ctx context.Context, src *SourceConfig, des *DesConfig, logger log.Log
 		if des.Shards == 0 {
 			des.Shards = *idxmeta.Settings.Index.Shards
 		}
-		m := esindex.Meta{Settings: &esindex.Settings{Index: &esindex.IndexSettings{
-			Shards:          &des.Shards,
-			RefreshInterval: refreshint,
-		}}}
+		m := esindex.Meta{Settings: &esindex.Settings{
+			Index: &esindex.IndexSettings{
+				Shards:          &des.Shards,
+				RefreshInterval: refreshint,
+				Mapping: &esindex.IndexMapping{ //TODO make this an argument
+					NestedFields: &esindex.FieldsSetting{
+						Limit: 10000,
+					},
+				},
+				Unassigned: &esindex.UnassignedWarper{ //TODO make this an argument
+					NodeOption: &esindex.NodeOptions{
+						DelayTimeout: "5m",
+					},
+				},
+			},
+		}}
 		if des.DelayRefresh {
 			m.Settings.Index.RefreshInterval = "-1" // Disable refreshing until the copy has completed
 		}
