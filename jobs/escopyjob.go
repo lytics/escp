@@ -200,6 +200,7 @@ func Copy(ctx context.Context, src *SourceConfig, des *DesConfig, logger log.Log
 		if err := esindex.Update(priDesUrl, &m); err != nil {
 			return fmt.Errorf("Error enabling replicas[%v]: %v", des.ReplicationFactor, err)
 		}
+		logger.Infof("index updated to enable replication factor:%v", des.ReplicationFactor)
 	}
 
 	desmeta, err = esindex.Get(priDesUrl)

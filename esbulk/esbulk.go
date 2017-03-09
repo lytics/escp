@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -134,6 +135,15 @@ func New(ctx context.Context, hosts []string, index string, bufsz, par int, docs
 // upload buffer to bulk API.
 func upload(ctx context.Context, url, index string, batch *Batch, logger log.Logger) error {
 	st := time.Now()
+	var lastFailedBrespErrs []*BulkResponse
+	errsString := func(br []*BulkResponse) string {
+		strs := []string{}
+		for _, b := range br {
+			strs = append(strs, fmt.Sprintf("%v->%v:%v", b.Id, b.Error.Type, b.Error.Reason))
+		}
+		return strings.Join(strs, ",")
+	}
+
 	for try := 0; try < 64; try++ {
 		select {
 		case <-ctx.Done():
@@ -151,7 +161,7 @@ func upload(ctx context.Context, url, index string, batch *Batch, logger log.Log
 		}
 
 		if try > 10 {
-			logger.Warnf("slow upload warning: retry:%v of %v bytes:%v batchlen:%v runtime:%v", try, 64, esscroll.IECFormat(uint64(len(buf))), batch.Len(), time.Since(st))
+			logger.Warnf("slow upload warning: retry:%v of %v bytes:%v batchlen:%v runtime:%v errors:%v", try, 64, esscroll.IECFormat(uint64(len(buf))), batch.Len(), time.Since(st), errsString(lastFailedBrespErrs))
 		}
 
 		resp, err := Client.Post(url, "application/json", bytes.NewReader(buf))
@@ -188,6 +198,8 @@ func upload(ctx context.Context, url, index string, batch *Batch, logger log.Log
 		if batch.Len() == 0 {
 			break
 		}
+
+		lastFailedBrespErrs = bresp.Failed(!include404)
 
 		backoff(try)
 	}

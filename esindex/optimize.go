@@ -11,17 +11,18 @@ import (
 //
 // Optimize blocks until the operation completes.
 func Optimize(target string, segn int) error {
-	resp, err := http.Post(fmt.Sprintf("%s/_optimize?max_num_segments=%d", target, segn), "text/plain", nil)
+	uri := fmt.Sprintf("%s/_forcemerge?max_num_segments=%d", target, segn)
+	resp, err := http.Post(uri, "text/plain", nil)
 	if err != nil {
-		return fmt.Errorf("error optimizing: %v", err)
+		return fmt.Errorf("error optimizing: (POST %v) error:%v", uri, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("non-2xx status code: %d", resp.StatusCode)
+		return fmt.Errorf("non-2xx status code: %d uri:%v", resp.StatusCode, uri)
 	}
 	// This could block for a while
 	if _, err := ioutil.ReadAll(resp.Body); err != nil {
-		return fmt.Errorf("error while waiting on optimize: %v", err)
+		return fmt.Errorf("error reading optimizing: uri:%v error:%v", uri, err)
 	}
 	return nil
 }
