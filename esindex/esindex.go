@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -36,7 +37,7 @@ type IndexMapping struct {
 }
 
 type FieldsSetting struct {
-	Limit int `json:"limit,omitempty"`
+	Limit int `json:"limit,string,omitempty"`
 }
 
 type UnassignedWarper struct {
@@ -71,19 +72,24 @@ func Create(dst string, m *Meta) error {
 func Get(dst string) (*Meta, error) {
 	resp, err := http.Get(dst)
 	if err != nil {
-		return nil, fmt.Errorf("error GET:%v err:%v", dst, err)
+		return nil, fmt.Errorf("esindex.Get:%v err:%v", dst, err)
 	}
 	if resp.StatusCode == 404 {
 		return nil, ErrMissing
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("non-200 status code from source Elasticsearch: %d", resp.StatusCode)
+		return nil, fmt.Errorf("esindex.Get: non-200 status code from source Elasticsearch: %d", resp.StatusCode)
 	}
 
-	idxmetamap := make(map[string]*Meta, 1)
-	if err := json.NewDecoder(resp.Body).Decode(&idxmetamap); err != nil {
-		return nil, fmt.Errorf("error decoding index metadata: %v", err)
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("esindex.Get: error reading response: %v", err)
 	}
+	idxmetamap := make(map[string]*Meta, 1)
+	if err := json.Unmarshal(b, &idxmetamap); err != nil {
+		return nil, fmt.Errorf("esindex.Get: error decoding response: err:%v body:%v", err, string(b))
+	}
+
 	parts := strings.Split(dst, "/")
 	idxname := parts[len(parts)-1]
 	idxmeta, ok := idxmetamap[idxname]

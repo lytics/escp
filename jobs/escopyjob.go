@@ -153,11 +153,13 @@ func Copy(ctx context.Context, src *SourceConfig, des *DesConfig, logger log.Log
 
 	desmeta, err := esindex.Get(priDesUrl)
 	if err != nil {
-		logger.Infof("error loading destination index settings. err:%v", err)
+		logger.Errorf("error loading destination index settings. err:%v", err)
+		return err
 	}
 	b, err := json.Marshal(desmeta)
 	if err != nil {
-		logger.Infof("error marshalling index settings. err:%v", err)
+		logger.Errorf("error marshalling index settings. err:%v", err)
+		return err
 	}
 
 	logger.Infof("Copying %d documents from %s to %s/%s destination index settings: %v bulksize:%v",
