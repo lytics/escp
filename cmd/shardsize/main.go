@@ -61,10 +61,10 @@ func main() {
 	}
 
 	sort.Sort(estypes.IndexSort(indexList))
-	log.Infof("         Index          Size   Shards (Optimal Shards)")
+	log.Infof("         Index         IndexSize  ShardSize  Shards (Optimal Shards)")
 	for _, sc := range indexList {
 		if sc.OptimalShards-sc.ShardCount > 10 {
-			log.Infof("%20s: %7s  %3d:%8d", sc.Name, bytefmt.ByteSize(uint64(sc.ByteSize)), sc.ShardCount, sc.OptimalShards)
+			log.Infof("%20s: %7s %12s    %3d %8d", sc.Name, bytefmt.ByteSize(uint64(sc.ByteSize)), bytefmt.ByteSize(uint64(sc.BytesPerShard)), sc.ShardCount, sc.OptimalShards)
 		}
 	}
 }
