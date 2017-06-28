@@ -1,0 +1,91 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "pv31U2z7ESu51w5x38+MvIO5kC4=",
+			"path": "github.com/Sirupsen/logrus",
+			"revision": "be8c024f59696b812ed7a498c6c7c4733c58a257",
+			"revisionTime": "2016-09-20T23:40:39Z"
+		},
+		{
+			"checksumSHA1": "vJFveoepc+cD62r2X06n/VWioLg=",
+			"path": "github.com/lytics/escp/cmd/escp",
+			"revision": "cf7353bbee396594535cb17988b3e8cc9df5dc9a",
+			"revisionTime": "2016-12-22T18:35:37Z"
+		},
+		{
+			"checksumSHA1": "2ECoa5rulLXFmGhDphdxbtwM69w=",
+			"path": "github.com/lytics/escp/cmd/esdiff",
+			"revision": "cf7353bbee396594535cb17988b3e8cc9df5dc9a",
+			"revisionTime": "2016-12-22T18:35:37Z"
+		},
+		{
+			"checksumSHA1": "BpfnwtqtKZg21GBUCgOvhpj5Q8Y=",
+			"path": "github.com/lytics/escp/cmd/primeshards",
+			"revision": "cf7353bbee396594535cb17988b3e8cc9df5dc9a",
+			"revisionTime": "2016-12-22T18:35:37Z"
+		},
+		{
+			"checksumSHA1": "07MA9V2Iruzf0mcJghBbcxLOAJo=",
+			"path": "github.com/lytics/escp/cmd/shardsize",
+			"revision": "cf7353bbee396594535cb17988b3e8cc9df5dc9a",
+			"revisionTime": "2016-12-22T18:35:37Z"
+		},
+		{
+			"checksumSHA1": "DLQvabxe6xU0WAzQQTpT7CgOSXM=",
+			"path": "github.com/lytics/escp/esbulk",
+			"revision": "cf7353bbee396594535cb17988b3e8cc9df5dc9a",
+			"revisionTime": "2016-12-22T18:35:37Z"
+		},
+		{
+			"checksumSHA1": "dYeS2GyRO+n9Rv6EWVwC+FkQCGg=",
+			"path": "github.com/lytics/escp/esdiff",
+			"revision": "cf7353bbee396594535cb17988b3e8cc9df5dc9a",
+			"revisionTime": "2016-12-22T18:35:37Z"
+		},
+		{
+			"checksumSHA1": "2CvGraMr14qCujKqunw9QwzyBLQ=",
+			"path": "github.com/lytics/escp/esindex",
+			"revision": "cf7353bbee396594535cb17988b3e8cc9df5dc9a",
+			"revisionTime": "2016-12-22T18:35:37Z"
+		},
+		{
+			"checksumSHA1": "RQq4XoCye59PxJZW2j2jEBk88NU=",
+			"path": "github.com/lytics/escp/esscroll",
+			"revision": "cf7353bbee396594535cb17988b3e8cc9df5dc9a",
+			"revisionTime": "2016-12-22T18:35:37Z"
+		},
+		{
+			"checksumSHA1": "81BkWEtyLDzXXOI7EDv3D+dbooE=",
+			"path": "github.com/lytics/escp/esshards",
+			"revision": "cf7353bbee396594535cb17988b3e8cc9df5dc9a",
+			"revisionTime": "2016-12-22T18:35:37Z"
+		},
+		{
+			"checksumSHA1": "/ymqbthHayfyDaofjT/OpzV22sE=",
+			"path": "github.com/lytics/escp/esstats",
+			"revision": "cf7353bbee396594535cb17988b3e8cc9df5dc9a",
+			"revisionTime": "2016-12-22T18:35:37Z"
+		},
+		{
+			"checksumSHA1": "UVzCr7Aw0pORf5L2iTmX7KnJNak=",
+			"path": "github.com/lytics/escp/estypes",
+			"revision": "cf7353bbee396594535cb17988b3e8cc9df5dc9a",
+			"revisionTime": "2016-12-22T18:35:37Z"
+		},
+		{
+			"checksumSHA1": "J1oI5fm4VdotEEBN+Kci8o9LJh4=",
+			"path": "github.com/pivotal-golang/bytefmt",
+			"revision": "263ce04fc1d71bc7d50c241293488b3f54c779e5",
+			"revisionTime": "2016-01-07T07:03:02Z"
+		},
+		{
+			"checksumSHA1": "w/oQQFHCnE+S+2g5D62nfY8aDuQ=",
+			"path": "golang.org/x/sys/unix",
+			"revision": "62bee037599929a6e9146f29d10dd5208c43507d",
+			"revisionTime": "2016-06-14T22:52:37Z"
+		}
+	],
+	"rootPath": "github.com/lytics/escp"
+}

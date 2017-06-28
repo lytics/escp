@@ -3,6 +3,7 @@ package estypes
 import (
 	"encoding/json"
 	"errors"
+	"math"
 )
 
 type Meta struct {
@@ -60,12 +61,12 @@ type ShardList []ShardInfo
 type ShardInfo []ShardAttributes
 
 type ShardAttributes struct {
-	State   string `json:"state"`
-	Primary bool   `json:"primary"`
-	Node    string `json:"node"`
-	//Relocating bool   `json:"relocating_node"`
-	Shard int    `json:"shard"`
-	Index string `json:"index"`
+	State      string `json:"state"`
+	Primary    bool   `json:"primary"`
+	Node       string `json:"node"`
+	Relocating bool   `json:"relocating_node"`
+	Shard      int    `json:"shard"`
+	Index      string `json:"index"`
 }
 
 /*
@@ -99,8 +100,37 @@ type IndexInfo struct {
 	ByteSize      int
 	ShardCount    int
 	BytesPerShard int
+	OptimalShards int
 }
 
+var GBytes = 10737418240
+
+// https://github.com/golang/go/issues/4594#issuecomment-135336012
+func round(f float64) int {
+	if math.Abs(f) < 0.5 {
+		return 0
+	}
+	return int(f + math.Copysign(0.5, f))
+}
+
+func optimalShards(ii IndexInfo) int {
+	proactiveSize := float64(ii.ByteSize) * 1.25
+	proactiveShardCount := round(proactiveSize / float64(GBytes))
+
+	if proactiveShardCount <= 3 {
+		return 3
+	} else {
+		return proactiveShardCount
+	}
+}
+
+// CalculateShards estimates an optimal number of shards given the byte size of an index.
+// There's not much science here, just based on poorly performing index backpressure.
+func (ii *IndexInfo) CalculateShards() {
+	ii.OptimalShards = optimalShards(*ii)
+}
+
+// IndexSort defines sorting indexes by their byte size.
 type IndexSort []IndexInfo
 
 func (is IndexSort) Len() int      { return len(is) }
