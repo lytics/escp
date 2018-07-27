@@ -73,7 +73,7 @@ func (s *ESScoll) Start() (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	searchurl := fmt.Sprintf("%s?search_type=scan&scroll=%s&size=%d", s.surl, s.timeout, s.pagesz)
+	searchurl := fmt.Sprintf("%s?scroll=%s&size=%d", s.surl, s.timeout, s.pagesz)
 
 	var resp *http.Response
 	if s.filter == nil {
